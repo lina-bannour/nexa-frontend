@@ -1,0 +1,92 @@
+Flutter crash report.
+Please report a bug at https://github.com/flutter/flutter/issues.
+
+## command
+
+flutter run -d chrome
+
+## exception
+
+TimeoutException: TimeoutException after 0:00:05.000000: Future not completed
+
+```
+#0      Future.timeout.<anonymous closure> (dart:async/future_impl.dart:1042:24)
+<asynchronous suspension>
+#1      WebkitDebugger.enable (package:dwds/src/debugging/webkit_debugger.dart:158:9)
+<asynchronous suspension>
+#2      Debugger._initialize (package:dwds/src/debugging/debugger.dart:253:5)
+<asynchronous suspension>
+#3      Debugger.create (package:dwds/src/debugging/debugger.dart:232:5)
+<asynchronous suspension>
+#4      ChromeProxyService.createIsolate (package:dwds/src/services/chrome/chrome_proxy_service.dart:282:22)
+<asynchronous suspension>
+#5      ChromeProxyService.create (package:dwds/src/services/chrome/chrome_proxy_service.dart:144:5)
+<asynchronous suspension>
+#6      ChromeDebugService.start (package:dwds/src/services/chrome/chrome_debug_service.dart:76:32)
+<asynchronous suspension>
+#7      DevHandler._createChromeAppServices (package:dwds/src/handlers/dev_handler.dart:363:26)
+<asynchronous suspension>
+#8      DevHandler.loadAppServices (package:dwds/src/handlers/dev_handler.dart:333:23)
+<asynchronous suspension>
+#9      DevHandler.createDebugConnectionForChrome (package:dwds/src/handlers/dev_handler.dart:654:30)
+<asynchronous suspension>
+#10     Dwds.debugConnection (package:dwds/dart_web_debug_service.dart:68:14)
+<asynchronous suspension>
+#11     WebDevFS.connect.<anonymous closure> (package:flutter_tools/src/isolated/devfs_web.dart:160:17)
+<asynchronous suspension>
+```
+
+## flutter doctor
+
+```
+[32m[✓][39m Flutter (Channel stable, 3.44.0, on Microsoft Windows [version
+    10.0.26200.8655], locale fr-FR) [4,3s]
+    [32m•[39m Flutter version 3.44.0 on channel stable at
+      C:\Users\octanet\Documents\flutter
+    [32m•[39m Upstream repository https://github.com/flutter/flutter.git
+    [32m•[39m Framework revision 559ffa3f75 (7 weeks ago), 2026-05-15 14:13:13 -0700
+    [32m•[39m Engine revision 4c525dac5e
+    [32m•[39m Dart version 3.12.0
+    [32m•[39m DevTools version 2.57.0
+    [32m•[39m Feature flags: enable-web, enable-linux-desktop, enable-macos-desktop,
+      enable-windows-desktop, enable-android, enable-ios, cli-animations,
+      enable-native-assets, enable-swift-package-manager,
+      omit-legacy-version-file, enable-lldb-debugging, enable-uiscene-migration
+
+[32m[✓][39m Windows Version (11 Famille Unilingue 64-bit, 25H2, 2009) [11,7s]
+
+[33m[!][39m Android toolchain - develop for Android devices (Android SDK version 36.1.0)
+    [6,7s]
+    [32m•[39m Android SDK at C:\Users\octanet\AppData\Local\Android\sdk
+    [32m•[39m Emulator version 36.6.11.0 (build_id 15507667) (CL:N/A)
+    [31m✗[39m cmdline-tools component is missing.
+      Try installing or updating Android Studio.
+      Alternatively, download the tools from
+      https://developer.android.com/studio#command-line-tools-only and make sure
+      to set the ANDROID_HOME environment variable.
+      See https://developer.android.com/studio/command-line for more details.
+    [31m✗[39m Android license status unknown.
+      Run `flutter doctor --android-licenses` to accept the SDK licenses.
+      See https://flutter.dev/to/windows-android-setup for more details.
+
+[32m[✓][39m Chrome - develop for the web [1 972ms]
+    [32m•[39m Chrome at C:\Program Files\Google\Chrome\Application\chrome.exe
+
+[32m[✓][39m Visual Studio - develop Windows apps (Visual Studio Build Tools 2026 18.1.1)
+    [1 968ms]
+    [32m•[39m Visual Studio at C:\Program Files (x86)\Microsoft Visual
+      Studio\18\BuildTools
+    [32m•[39m Visual Studio Build Tools 2026 version 18.1.11312.151
+    [32m•[39m Windows 10 SDK version 10.0.26100.0
+
+[32m[✓][39m Connected device (3 available) [1 056ms]
+    [32m•[39m Windows (desktop) • windows • windows-x64    • Microsoft Windows [version
+      10.0.26200.8655]
+    [32m•[39m Chrome (web)      • chrome  • web-javascript • Google Chrome 148.0.7778.179
+    [32m•[39m Edge (web)        • edge    • web-javascript • Microsoft Edge 150.0.4078.48
+
+[32m[✓][39m Network resources [1 053ms]
+    [32m•[39m All expected network resources are available.
+
+[33m![39m Doctor found issues in 1 category.
+```
