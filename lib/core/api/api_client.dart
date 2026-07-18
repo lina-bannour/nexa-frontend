@@ -68,6 +68,26 @@ class ApiClient {
     return token;
   }
 
+  // PASSWORD RESET
+  static Future<void> forgotPassword(String email) async {
+    await _dio.post('/auth/forgot-password', data: {'email': email});
+  }
+
+  static Future<void> resetPassword(
+      String email, String code, String newPassword) async {
+    await _dio.post('/auth/reset-password',
+        data: {'email': email, 'code': code, 'newPassword': newPassword});
+  }
+
+  // EMAIL VERIFICATION
+  static Future<void> verifyEmail(String email, String code) async {
+    await _dio.post('/auth/verify-email', data: {'email': email, 'code': code});
+  }
+
+  static Future<void> resendVerification(String email) async {
+    await _dio.post('/auth/resend-verification', data: {'email': email});
+  }
+
   // PROFILE
   static Future<Map<String, dynamic>> getProfile() async {
     final res = await _dio.get('/users/me');

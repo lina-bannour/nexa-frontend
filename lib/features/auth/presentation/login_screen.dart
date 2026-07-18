@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/nexa_theme.dart';
+import 'forgot_password_screen.dart';
+import 'verify_email_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final VoidCallback onLogin;
@@ -30,10 +32,18 @@ class _LoginScreenState extends State<LoginScreen> {
       await ApiClient.login(_emailController.text.trim(), _passwordController.text);
       widget.onLogin();
     } catch (e) {
-      setState(() => _error = 'Email ou mot de passe incorrect');
+      setState(() => _error = _extractError(e, 'Email ou mot de passe incorrect'));
     } finally {
       setState(() => _loading = false);
     }
+  }
+
+  String _extractError(Object e, String fallback) {
+    try {
+      final data = (e as dynamic).response?.data;
+      if (data is Map && data['message'] is String) return data['message'] as String;
+    } catch (_) {}
+    return fallback;
   }
 
   Future<void> _register() async {
@@ -47,7 +57,13 @@ class _LoginScreenState extends State<LoginScreen> {
         filiere: _selectedFiliere,
         ecole: _ecoleController.text.isEmpty ? null : _ecoleController.text,
       );
-      widget.onLogin();
+      if (!mounted) return;
+      // Registration signs the user in immediately even though the account
+      // isn't verified yet — nudge them to verify, but don't block access.
+      final email = _emailController.text.trim();
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => VerifyEmailScreen(email: email, onDone: widget.onLogin),
+      ));
     } catch (e) {
       setState(() => _error = 'Erreur lors de l\'inscription');
     } finally {
@@ -126,6 +142,24 @@ class _LoginScreenState extends State<LoginScreen> {
                     _field(_emailController, 'Email', Icons.email_outlined, type: TextInputType.emailAddress),
                     const SizedBox(height: 12),
                     _field(_passwordController, 'Mot de passe', Icons.lock_outlined, obscure: true),
+
+                    if (!_showRegister) ...[
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: _loading ? null : () {
+                            Navigator.of(context).push(MaterialPageRoute(
+                              builder: (_) => ForgotPasswordScreen(
+                                onDone: () => Navigator.of(context).pop(),
+                              ),
+                            ));
+                          },
+                          style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
+                          child: const Text('Mot de passe oublié ?',
+                              style: TextStyle(color: NexaColors.blue, fontWeight: FontWeight.w600, fontSize: 12)),
+                        ),
+                      ),
+                    ],
 
                     if (_error != null) ...[
                       const SizedBox(height: 12),
