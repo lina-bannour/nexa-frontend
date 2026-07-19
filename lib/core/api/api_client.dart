@@ -152,4 +152,124 @@ static Future<Map<String, dynamic>> submitContestAnswer(
   );
   return res.data;
 }
+
+  // ── ADMIN: DASHBOARD ──────────────────────────────────────────────────
+  static Future<Map<String, dynamic>> getAdminDashboard() async {
+    final res = await _dio.get('/admin/dashboard');
+    return res.data;
+  }
+
+  // ── ADMIN: USERS ──────────────────────────────────────────────────────
+  static Future<List<dynamic>> getAdminUsers(
+      {String? search, String? status, String? ecole}) async {
+    final res = await _dio.get('/admin/users', queryParameters: {
+      if (search != null && search.isNotEmpty) 'search': search,
+      if (status != null) 'status': status,
+      if (ecole != null) 'ecole': ecole,
+    });
+    return res.data;
+  }
+
+  static Future<Map<String, dynamic>> getAdminUserDetail(String id) async {
+    final res = await _dio.get('/admin/users/$id');
+    return res.data;
+  }
+
+  static Future<Map<String, dynamic>> updateAdminUser(
+      String id, Map<String, dynamic> data) async {
+    final res = await _dio.put('/admin/users/$id', data: data);
+    return res.data;
+  }
+
+  static Future<Map<String, dynamic>> updateUserStatus(
+      String id, String status) async {
+    final res =
+        await _dio.patch('/admin/users/$id/status', data: {'status': status});
+    return res.data;
+  }
+
+  static Future<Map<String, dynamic>> updateUserRole(
+      String id, String role) async {
+    final res =
+        await _dio.patch('/admin/users/$id/role', data: {'role': role});
+    return res.data;
+  }
+
+  // ── ADMIN: CONTENT (exercises + contests) ───────────────────────────────
+  static Future<List<dynamic>> getAdminExercises() async {
+    final res = await _dio.get('/admin/content/exercises');
+    return res.data;
+  }
+
+  static Future<Map<String, dynamic>> createExercise(
+      Map<String, dynamic> data) async {
+    final res = await _dio.post('/exercises', data: data);
+    return res.data;
+  }
+
+  static Future<Map<String, dynamic>> updateAdminExercise(
+      String id, Map<String, dynamic> data) async {
+    final res = await _dio.put('/admin/content/exercises/$id', data: data);
+    return res.data;
+  }
+
+  static Future<void> deleteAdminExercise(String id) async {
+    await _dio.delete('/admin/content/exercises/$id');
+  }
+
+  static Future<List<dynamic>> getAdminContests() async {
+    final res = await _dio.get('/admin/content/contests');
+    return res.data;
+  }
+
+  static Future<Map<String, dynamic>> updateAdminContest(
+      String id, Map<String, dynamic> data) async {
+    final res = await _dio.put('/admin/content/contests/$id', data: data);
+    return res.data;
+  }
+
+  static Future<void> deleteAdminContest(String id) async {
+    await _dio.delete('/admin/content/contests/$id');
+  }
+
+  // ── ADMIN: FORUM MODERATION ─────────────────────────────────────────────
+  static Future<Map<String, dynamic>> getModerationStats() async {
+    final res = await _dio.get('/admin/moderation/stats');
+    return res.data;
+  }
+
+  static Future<List<dynamic>> getReportedPosts() async {
+    final res = await _dio.get('/admin/moderation/reported');
+    return res.data;
+  }
+
+  static Future<List<dynamic>> getAllModeratedPosts() async {
+    final res = await _dio.get('/admin/moderation/posts');
+    return res.data;
+  }
+
+  static Future<Map<String, dynamic>> updatePostStatus(
+      String id, String status) async {
+    final res = await _dio.patch('/admin/moderation/posts/$id/status',
+        data: {'status': status});
+    return res.data;
+  }
+
+  // ── ADMIN: SETTINGS ──────────────────────────────────────────────────────
+  static Future<Map<String, dynamic>> getAdminSettings() async {
+    final res = await _dio.get('/admin/settings');
+    return res.data;
+  }
+
+  static Future<Map<String, dynamic>> updateAdminSettings(
+      Map<String, dynamic> data) async {
+    final res = await _dio.put('/admin/settings', data: data);
+    return res.data;
+  }
+
+  static Future<Map<String, dynamic>> updateMaintenanceMode(bool on) async {
+    final res = await _dio
+        .patch('/admin/settings/maintenance', data: {'maintenanceMode': on});
+    return res.data;
+  }
 }

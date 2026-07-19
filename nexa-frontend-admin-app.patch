@@ -1,0 +1,2423 @@
+From daaeae3c1d7f2ef21b03571d979f2709e3046e24 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Sun, 19 Jul 2026 15:42:12 +0000
+Subject: [PATCH] =?UTF-8?q?feat:=20admin=20dashboard=20app=20=E2=80=94=20d?=
+ =?UTF-8?q?ashboard,=20students,=20content,=20moderation,=20settings?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Full admin experience, wired to the real backend admin endpoints instead of
+the mockup's hardcoded data. Adapted the web mockup's sidebar layout to a
+mobile Drawer + top bar, since a persistent sidebar doesn't fit a phone
+screen.
+
+- AppShell now resolves the logged-in user's role after login (GET
+  /users/me) and routes ADMIN accounts into AdminShell instead of the
+  normal student bottom-nav experience. If the role check fails for any
+  reason, falls back to the student view rather than blocking the app.
+- Dashboard: real KPIs, daily-activity bar chart, filière-distribution
+  donut, and a top-students list (sorted client-side from /admin/users,
+  since there's no dedicated leaderboard-for-admin endpoint).
+- Students: list with search/filiere/status filters, detail sheet with
+  real stats (XP, streak, exercises solved/attempted), suspend/reactivate/
+  ban, and promote-to-admin.
+- Content: exercises + contests tabs. Exercise create/edit form (full
+  fields incl. choices with a radio for the correct answer — matches the
+  backend's atomic choice-replace). Contest edit covers metadata (title/
+  year/filière); editing a contest's actual questions isn't built here,
+  noted as a follow-up if needed. Delete with confirmation on both.
+- Moderation: stats, filter by reported/published, validate or remove a
+  reported post.
+- Settings: general info, gamification XP/penalty rules, and the
+  maintenance-mode toggle (applies immediately via PATCH, not tied to the
+  Save button).
+
+Deliberately NOT included, since there's no backend support for it:
+- The mockup's "IA NEXA (API key)" settings card — PlatformSettings has no
+  field for this at all; building the UI would be pure decoration.
+- The mockup's "Analytique" screen (12-month trends, per-school engagement)
+  — the backend only tracks the last 7 days, no historical/monthly
+  aggregation exists. Building fake monthly charts felt worse than not
+  having the screen.
+- The mockup's live "Activité récente" feed — there's no audit-log/events
+  table backing it; it's pure mock data in the original file.
+
+Known pre-existing backend gap surfaced while wiring settings: the
+"xpPerDirectAnswer" field is stored and editable but not actually applied
+anywhere in exercises/contests grading (each exercise's own xpBase is
+always used instead). Left as-is since fixing it is a backend change, not
+in scope here — flagging for a future patch.
+---
+ lib/core/api/api_client.dart                  | 120 +++++
+ lib/core/theme/nexa_theme.dart                |   1 +
+ .../presentation/admin_content_screen.dart    | 448 ++++++++++++++++++
+ .../presentation/admin_dashboard_screen.dart  | 243 ++++++++++
+ .../presentation/admin_forum_screen.dart      | 196 ++++++++
+ .../presentation/admin_settings_screen.dart   | 216 +++++++++
+ .../admin/presentation/admin_shell.dart       | 219 +++++++++
+ .../presentation/admin_students_screen.dart   | 331 +++++++++++++
+ lib/features/admin/widgets/admin_widgets.dart | 435 +++++++++++++++++
+ lib/main.dart                                 |  40 +-
+ 10 files changed, 2246 insertions(+), 3 deletions(-)
+ create mode 100644 lib/features/admin/presentation/admin_content_screen.dart
+ create mode 100644 lib/features/admin/presentation/admin_dashboard_screen.dart
+ create mode 100644 lib/features/admin/presentation/admin_forum_screen.dart
+ create mode 100644 lib/features/admin/presentation/admin_settings_screen.dart
+ create mode 100644 lib/features/admin/presentation/admin_shell.dart
+ create mode 100644 lib/features/admin/presentation/admin_students_screen.dart
+ create mode 100644 lib/features/admin/widgets/admin_widgets.dart
+
+diff --git a/lib/core/api/api_client.dart b/lib/core/api/api_client.dart
+index 7d2527d..ca6c19a 100644
+--- a/lib/core/api/api_client.dart
++++ b/lib/core/api/api_client.dart
+@@ -152,4 +152,124 @@ static Future<Map<String, dynamic>> submitContestAnswer(
+   );
+   return res.data;
+ }
++
++  // ── ADMIN: DASHBOARD ──────────────────────────────────────────────────
++  static Future<Map<String, dynamic>> getAdminDashboard() async {
++    final res = await _dio.get('/admin/dashboard');
++    return res.data;
++  }
++
++  // ── ADMIN: USERS ──────────────────────────────────────────────────────
++  static Future<List<dynamic>> getAdminUsers(
++      {String? search, String? status, String? ecole}) async {
++    final res = await _dio.get('/admin/users', queryParameters: {
++      if (search != null && search.isNotEmpty) 'search': search,
++      if (status != null) 'status': status,
++      if (ecole != null) 'ecole': ecole,
++    });
++    return res.data;
++  }
++
++  static Future<Map<String, dynamic>> getAdminUserDetail(String id) async {
++    final res = await _dio.get('/admin/users/$id');
++    return res.data;
++  }
++
++  static Future<Map<String, dynamic>> updateAdminUser(
++      String id, Map<String, dynamic> data) async {
++    final res = await _dio.put('/admin/users/$id', data: data);
++    return res.data;
++  }
++
++  static Future<Map<String, dynamic>> updateUserStatus(
++      String id, String status) async {
++    final res =
++        await _dio.patch('/admin/users/$id/status', data: {'status': status});
++    return res.data;
++  }
++
++  static Future<Map<String, dynamic>> updateUserRole(
++      String id, String role) async {
++    final res =
++        await _dio.patch('/admin/users/$id/role', data: {'role': role});
++    return res.data;
++  }
++
++  // ── ADMIN: CONTENT (exercises + contests) ───────────────────────────────
++  static Future<List<dynamic>> getAdminExercises() async {
++    final res = await _dio.get('/admin/content/exercises');
++    return res.data;
++  }
++
++  static Future<Map<String, dynamic>> createExercise(
++      Map<String, dynamic> data) async {
++    final res = await _dio.post('/exercises', data: data);
++    return res.data;
++  }
++
++  static Future<Map<String, dynamic>> updateAdminExercise(
++      String id, Map<String, dynamic> data) async {
++    final res = await _dio.put('/admin/content/exercises/$id', data: data);
++    return res.data;
++  }
++
++  static Future<void> deleteAdminExercise(String id) async {
++    await _dio.delete('/admin/content/exercises/$id');
++  }
++
++  static Future<List<dynamic>> getAdminContests() async {
++    final res = await _dio.get('/admin/content/contests');
++    return res.data;
++  }
++
++  static Future<Map<String, dynamic>> updateAdminContest(
++      String id, Map<String, dynamic> data) async {
++    final res = await _dio.put('/admin/content/contests/$id', data: data);
++    return res.data;
++  }
++
++  static Future<void> deleteAdminContest(String id) async {
++    await _dio.delete('/admin/content/contests/$id');
++  }
++
++  // ── ADMIN: FORUM MODERATION ─────────────────────────────────────────────
++  static Future<Map<String, dynamic>> getModerationStats() async {
++    final res = await _dio.get('/admin/moderation/stats');
++    return res.data;
++  }
++
++  static Future<List<dynamic>> getReportedPosts() async {
++    final res = await _dio.get('/admin/moderation/reported');
++    return res.data;
++  }
++
++  static Future<List<dynamic>> getAllModeratedPosts() async {
++    final res = await _dio.get('/admin/moderation/posts');
++    return res.data;
++  }
++
++  static Future<Map<String, dynamic>> updatePostStatus(
++      String id, String status) async {
++    final res = await _dio.patch('/admin/moderation/posts/$id/status',
++        data: {'status': status});
++    return res.data;
++  }
++
++  // ── ADMIN: SETTINGS ──────────────────────────────────────────────────────
++  static Future<Map<String, dynamic>> getAdminSettings() async {
++    final res = await _dio.get('/admin/settings');
++    return res.data;
++  }
++
++  static Future<Map<String, dynamic>> updateAdminSettings(
++      Map<String, dynamic> data) async {
++    final res = await _dio.put('/admin/settings', data: data);
++    return res.data;
++  }
++
++  static Future<Map<String, dynamic>> updateMaintenanceMode(bool on) async {
++    final res = await _dio
++        .patch('/admin/settings/maintenance', data: {'maintenanceMode': on});
++    return res.data;
++  }
+ }
+diff --git a/lib/core/theme/nexa_theme.dart b/lib/core/theme/nexa_theme.dart
+index 73a4964..4889ae8 100644
+--- a/lib/core/theme/nexa_theme.dart
++++ b/lib/core/theme/nexa_theme.dart
+@@ -19,6 +19,7 @@ class NexaColors {
+   static const txt3 = Color(0xFF8FA3C0);
+   static const green = Color(0xFF10B981);
+   static const red = Color(0xFFEF4444);
++  static const orange = Color(0xFFF97316);
+ }
+ 
+ class NexaTheme {
+diff --git a/lib/features/admin/presentation/admin_content_screen.dart b/lib/features/admin/presentation/admin_content_screen.dart
+new file mode 100644
+index 0000000..12f6609
+--- /dev/null
++++ b/lib/features/admin/presentation/admin_content_screen.dart
+@@ -0,0 +1,448 @@
++import 'package:flutter/material.dart';
++import '../../../core/api/api_client.dart';
++import '../../../core/theme/nexa_theme.dart';
++import '../widgets/admin_widgets.dart';
++
++class AdminContentScreen extends StatefulWidget {
++  const AdminContentScreen({super.key});
++
++  @override
++  State<AdminContentScreen> createState() => _AdminContentScreenState();
++}
++
++class _AdminContentScreenState extends State<AdminContentScreen> {
++  String _view = 'exercices';
++  List<dynamic> _exercises = [];
++  List<dynamic> _contests = [];
++  bool _loading = true;
++  String? _error;
++
++  @override
++  void initState() {
++    super.initState();
++    _load();
++  }
++
++  Future<void> _load() async {
++    setState(() { _loading = true; _error = null; });
++    try {
++      final results = await Future.wait([
++        ApiClient.getAdminExercises(),
++        ApiClient.getAdminContests(),
++      ]);
++      setState(() {
++        _exercises = results[0];
++        _contests = results[1];
++      });
++    } catch (_) {
++      setState(() => _error = 'Impossible de charger le contenu.');
++    } finally {
++      setState(() => _loading = false);
++    }
++  }
++
++  Future<void> _deleteExercise(String id) async {
++    try {
++      await ApiClient.deleteAdminExercise(id);
++      if (mounted) { showAdSnack(context, 'Exercice supprimé'); _load(); }
++    } catch (_) {
++      if (mounted) showAdSnack(context, 'Échec de la suppression', error: true);
++    }
++  }
++
++  Future<void> _deleteContest(String id) async {
++    try {
++      await ApiClient.deleteAdminContest(id);
++      if (mounted) { showAdSnack(context, 'Concours supprimé'); _load(); }
++    } catch (_) {
++      if (mounted) showAdSnack(context, 'Échec de la suppression', error: true);
++    }
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    if (_loading) return const Center(child: CircularProgressIndicator(color: NexaColors.blue));
++    if (_error != null) {
++      return Center(
++        child: Column(mainAxisSize: MainAxisSize.min, children: [
++          Text(_error!, style: const TextStyle(color: NexaColors.txt2)),
++          const SizedBox(height: 12),
++          AdBtn(label: 'Réessayer', onPressed: _load),
++        ]),
++      );
++    }
++
++    return RefreshIndicator(
++      onRefresh: _load,
++      color: NexaColors.blue,
++      child: ListView(
++        padding: const EdgeInsets.all(16),
++        children: [
++          Row(
++            mainAxisAlignment: MainAxisAlignment.spaceBetween,
++            children: [
++              Container(
++                padding: const EdgeInsets.all(4),
++                decoration: BoxDecoration(color: NexaColors.blueLight, borderRadius: BorderRadius.circular(10)),
++                child: Row(children: [
++                  _tabBtn('exercices', '📚 Exercices'),
++                  _tabBtn('concours', '🏁 Concours'),
++                ]),
++              ),
++              if (_view == 'exercices')
++                AdBtn(label: 'Ajouter', icon: Icons.add, small: true, onPressed: _openCreateExercise),
++            ],
++          ),
++          const SizedBox(height: 16),
++          if (_view == 'exercices') ..._exercises.map(_exerciseCard) else ..._contests.map(_contestCard),
++          if (_view == 'exercices' && _exercises.isEmpty)
++            const Padding(padding: EdgeInsets.all(24), child: Center(child: Text('Aucun exercice', style: TextStyle(color: NexaColors.txt3)))),
++          if (_view == 'concours' && _contests.isEmpty)
++            const Padding(padding: EdgeInsets.all(24), child: Center(child: Text('Aucun concours', style: TextStyle(color: NexaColors.txt3)))),
++        ],
++      ),
++    );
++  }
++
++  Widget _tabBtn(String id, String label) {
++    final active = _view == id;
++    return GestureDetector(
++      onTap: () => setState(() => _view = id),
++      child: Container(
++        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
++        decoration: BoxDecoration(color: active ? Colors.white : Colors.transparent, borderRadius: BorderRadius.circular(8)),
++        child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? NexaColors.navy : NexaColors.txt3)),
++      ),
++    );
++  }
++
++  Widget _exerciseCard(dynamic ex) {
++    final choix = (ex['choix'] as List<dynamic>? ?? []);
++    final attemptsCount = (ex['_count']?['attempts']) ?? 0;
++    return AdCard(
++      padding: const EdgeInsets.all(14),
++      child: Column(
++        crossAxisAlignment: CrossAxisAlignment.start,
++        children: [
++          Row(
++            crossAxisAlignment: CrossAxisAlignment.start,
++            children: [
++              Expanded(
++                child: Column(
++                  crossAxisAlignment: CrossAxisAlignment.start,
++                  children: [
++                    Text('${ex['titre'] ?? ''}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
++                    const SizedBox(height: 4),
++                    Row(children: [
++                      _miniTag('${ex['matiere'] ?? ''}', NexaColors.blue),
++                      const SizedBox(width: 6),
++                      _miniTag('${ex['difficulte'] ?? ''}', NexaColors.purple),
++                    ]),
++                  ],
++                ),
++              ),
++              Text('${ex['xpBase'] ?? 0} XP', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: NexaColors.gold)),
++            ],
++          ),
++          const SizedBox(height: 8),
++          Text('${choix.length} choix · $attemptsCount tentatives', style: const TextStyle(fontSize: 11, color: NexaColors.txt3)),
++          const SizedBox(height: 10),
++          Row(children: [
++            Expanded(child: AdBtn(label: 'Éditer', icon: Icons.edit_outlined, small: true, variant: AdBtnVariant.secondary, onPressed: () => _openEditExercise(ex))),
++            const SizedBox(width: 8),
++            AdBtn(label: '', icon: Icons.delete_outline, small: true, variant: AdBtnVariant.red, onPressed: () => _confirmDelete(
++              title: 'Supprimer cet exercice ?',
++              message: '${ex['titre']} sera définitivement supprimé.',
++              onConfirm: () => _deleteExercise(ex['id']),
++            )),
++          ]),
++        ],
++      ),
++    );
++  }
++
++  Widget _contestCard(dynamic c) {
++    final count = c['_count'] ?? {};
++    return AdCard(
++      padding: const EdgeInsets.all(14),
++      child: Column(
++        crossAxisAlignment: CrossAxisAlignment.start,
++        children: [
++          Row(
++            children: [
++              Expanded(
++                child: Column(
++                  crossAxisAlignment: CrossAxisAlignment.start,
++                  children: [
++                    Text('${c['titre'] ?? ''}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
++                    const SizedBox(height: 4),
++                    Row(children: [
++                      _miniTag('${c['annee'] ?? ''}', NexaColors.navy),
++                      const SizedBox(width: 6),
++                      _miniTag('${c['filiere'] ?? ''}', NexaColors.blue),
++                    ]),
++                  ],
++                ),
++              ),
++            ],
++          ),
++          const SizedBox(height: 8),
++          Text('${count['questions'] ?? 0} questions · ${count['sessions'] ?? 0} sessions', style: const TextStyle(fontSize: 11, color: NexaColors.txt3)),
++          const SizedBox(height: 10),
++          Row(children: [
++            Expanded(child: AdBtn(label: 'Éditer', icon: Icons.edit_outlined, small: true, variant: AdBtnVariant.secondary, onPressed: () => _openEditContest(c))),
++            const SizedBox(width: 8),
++            AdBtn(label: '', icon: Icons.delete_outline, small: true, variant: AdBtnVariant.red, onPressed: () => _confirmDelete(
++              title: 'Supprimer ce concours ?',
++              message: '${c['titre']} sera définitivement supprimé.',
++              onConfirm: () => _deleteContest(c['id']),
++            )),
++          ]),
++        ],
++      ),
++    );
++  }
++
++  Widget _miniTag(String label, Color color) {
++    if (label.isEmpty) return const SizedBox.shrink();
++    return Container(
++      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
++      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
++      child: Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color)),
++    );
++  }
++
++  void _confirmDelete({required String title, required String message, required VoidCallback onConfirm}) {
++    showDialog(
++      context: context,
++      builder: (ctx) => AlertDialog(
++        title: Text(title),
++        content: Text(message),
++        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
++        actions: [
++          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Annuler')),
++          TextButton(
++            onPressed: () { Navigator.of(ctx).pop(); onConfirm(); },
++            child: const Text('Supprimer', style: TextStyle(color: NexaColors.red, fontWeight: FontWeight.w700)),
++          ),
++        ],
++      ),
++    );
++  }
++
++  void _openEditExercise(dynamic ex) {
++    showAdModal(context, title: "Modifier l'exercice", child: _ExerciseFormContent(
++      exercise: ex,
++      onSaved: () { Navigator.of(context).pop(); _load(); },
++    ));
++  }
++
++  void _openCreateExercise() {
++    showAdModal(context, title: 'Nouvel exercice', child: _ExerciseFormContent(
++      exercise: null,
++      onSaved: () { Navigator.of(context).pop(); _load(); },
++    ));
++  }
++
++  void _openEditContest(dynamic c) {
++    showAdModal(context, title: 'Modifier le concours', child: _ContestFormContent(
++      contest: c,
++      onSaved: () { Navigator.of(context).pop(); _load(); },
++    ));
++  }
++}
++
++/// Create/edit form for an exercise. Editing a title/matiere/difficulte/xp
++/// doesn't touch the choices; choices are only replaced together (matching
++/// the backend, which replaces the whole choice set atomically when
++/// provided at all).
++class _ExerciseFormContent extends StatefulWidget {
++  final dynamic exercise; // null = create
++  final VoidCallback onSaved;
++  const _ExerciseFormContent({required this.exercise, required this.onSaved});
++
++  @override
++  State<_ExerciseFormContent> createState() => _ExerciseFormContentState();
++}
++
++class _ExerciseFormContentState extends State<_ExerciseFormContent> {
++  late TextEditingController _titre;
++  late TextEditingController _enonce;
++  late TextEditingController _solution;
++  late TextEditingController _xp;
++  late TextEditingController _hint1, _hint2;
++  String _matiere = 'MATHEMATIQUES';
++  String _difficulte = 'UN_ETOILE';
++  final List<TextEditingController> _choiceControllers = [];
++  int _correctIndex = 0;
++  bool _saving = false;
++
++  bool get _isCreate => widget.exercise == null;
++
++  @override
++  void initState() {
++    super.initState();
++    final ex = widget.exercise;
++    _titre = TextEditingController(text: ex?['titre'] ?? '');
++    _enonce = TextEditingController(text: ex?['enonce'] ?? '');
++    _solution = TextEditingController(text: ex?['solutionDetaillee'] ?? '');
++    _xp = TextEditingController(text: '${ex?['xpBase'] ?? 10}');
++    _hint1 = TextEditingController(text: ex?['hint1'] ?? '');
++    _hint2 = TextEditingController(text: ex?['hint2'] ?? '');
++    _matiere = ex?['matiere'] ?? 'MATHEMATIQUES';
++    _difficulte = ex?['difficulte'] ?? 'UN_ETOILE';
++
++    final existingChoices = (ex?['choix'] as List<dynamic>?) ?? [];
++    if (existingChoices.isNotEmpty) {
++      for (var i = 0; i < existingChoices.length; i++) {
++        _choiceControllers.add(TextEditingController(text: existingChoices[i]['label'] ?? ''));
++        if (existingChoices[i]['isCorrect'] == true) _correctIndex = i;
++      }
++    } else {
++      _choiceControllers.addAll([TextEditingController(), TextEditingController(), TextEditingController(), TextEditingController()]);
++    }
++  }
++
++  Future<void> _save() async {
++    final choix = _choiceControllers.asMap().entries
++        .where((e) => e.value.text.trim().isNotEmpty)
++        .map((e) => {'label': e.value.text.trim(), 'isCorrect': e.key == _correctIndex})
++        .toList();
++
++    if (_titre.text.trim().isEmpty || _enonce.text.trim().isEmpty || _solution.text.trim().isEmpty || choix.length < 2) {
++      showAdSnack(context, 'Titre, énoncé, solution et au moins 2 choix sont requis', error: true);
++      return;
++    }
++    if (!choix.any((c) => c['isCorrect'] == true)) {
++      showAdSnack(context, 'Sélectionnez la bonne réponse', error: true);
++      return;
++    }
++
++    setState(() => _saving = true);
++    final data = {
++      'titre': _titre.text.trim(),
++      'matiere': _matiere,
++      'difficulte': _difficulte,
++      'enonce': _enonce.text.trim(),
++      'solutionDetaillee': _solution.text.trim(),
++      'xpBase': int.tryParse(_xp.text) ?? 10,
++      if (_hint1.text.trim().isNotEmpty) 'hint1': _hint1.text.trim(),
++      if (_hint2.text.trim().isNotEmpty) 'hint2': _hint2.text.trim(),
++      'choix': choix,
++    };
++
++    try {
++      if (_isCreate) {
++        await ApiClient.createExercise(data);
++        if (mounted) showAdSnack(context, 'Exercice créé');
++      } else {
++        await ApiClient.updateAdminExercise(widget.exercise['id'], data);
++        if (mounted) showAdSnack(context, 'Exercice mis à jour');
++      }
++      widget.onSaved();
++    } catch (_) {
++      if (mounted) { showAdSnack(context, 'Échec de l\'enregistrement', error: true); setState(() => _saving = false); }
++    }
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.start,
++      children: [
++        AdField(label: 'Titre', controller: _titre),
++        AdDropdown(label: 'Matière', value: _matiere, options: const ['MATHEMATIQUES', 'PHYSIQUE', 'SCIENCES_INGENIEUR', 'AUTRE'], onChanged: (v) => setState(() => _matiere = v!)),
++        AdDropdown(label: 'Difficulté', value: _difficulte, options: const ['UN_ETOILE', 'DEUX_ETOILES', 'TROIS_ETOILES'], onChanged: (v) => setState(() => _difficulte = v!)),
++        AdField(label: 'XP de base', controller: _xp, keyboardType: TextInputType.number),
++        AdField(label: 'Énoncé', controller: _enonce, maxLines: 3),
++        AdField(label: 'Solution détaillée', controller: _solution, maxLines: 3),
++        AdField(label: 'Indice 1 (optionnel)', controller: _hint1),
++        AdField(label: 'Indice 2 (optionnel)', controller: _hint2),
++        const Text('CHOIX (cochez la bonne réponse)', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: NexaColors.txt3, letterSpacing: 0.6)),
++        const SizedBox(height: 6),
++        ..._choiceControllers.asMap().entries.map((e) => Padding(
++              padding: const EdgeInsets.only(bottom: 8),
++              child: Row(children: [
++                Radio<int>(value: e.key, groupValue: _correctIndex, onChanged: (v) => setState(() => _correctIndex = v!), activeColor: NexaColors.green),
++                Expanded(
++                  child: TextField(
++                    controller: e.value,
++                    style: const TextStyle(fontSize: 13),
++                    decoration: InputDecoration(
++                      hintText: 'Choix ${e.key + 1}',
++                      isDense: true,
++                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
++                      filled: true, fillColor: NexaColors.bg,
++                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: NexaColors.border)),
++                    ),
++                  ),
++                ),
++              ]),
++            )),
++        const SizedBox(height: 8),
++        AdBtn(label: _isCreate ? 'Créer' : 'Enregistrer', full: true, loading: _saving, onPressed: _save),
++      ],
++    );
++  }
++}
++
++/// Edit form for a contest — metadata only (title, year, filière, matière).
++/// The backend also supports replacing the full question set via the same
++/// PUT, but building a full QCM-question editor is out of scope here; use
++/// the exercise-style question builder if that becomes needed later.
++class _ContestFormContent extends StatefulWidget {
++  final dynamic contest;
++  final VoidCallback onSaved;
++  const _ContestFormContent({required this.contest, required this.onSaved});
++
++  @override
++  State<_ContestFormContent> createState() => _ContestFormContentState();
++}
++
++class _ContestFormContentState extends State<_ContestFormContent> {
++  late TextEditingController _titre;
++  late TextEditingController _annee;
++  String _filiere = 'MP';
++  bool _saving = false;
++
++  @override
++  void initState() {
++    super.initState();
++    _titre = TextEditingController(text: widget.contest['titre'] ?? '');
++    _annee = TextEditingController(text: '${widget.contest['annee'] ?? ''}');
++    _filiere = widget.contest['filiere'] ?? 'MP';
++  }
++
++  Future<void> _save() async {
++    if (_titre.text.trim().isEmpty) {
++      showAdSnack(context, 'Le titre est requis', error: true);
++      return;
++    }
++    setState(() => _saving = true);
++    try {
++      await ApiClient.updateAdminContest(widget.contest['id'], {
++        'titre': _titre.text.trim(),
++        'annee': int.tryParse(_annee.text) ?? widget.contest['annee'],
++        'filiere': _filiere,
++      });
++      if (mounted) showAdSnack(context, 'Concours mis à jour');
++      widget.onSaved();
++    } catch (_) {
++      if (mounted) { showAdSnack(context, 'Échec de l\'enregistrement', error: true); setState(() => _saving = false); }
++    }
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.start,
++      children: [
++        AdField(label: 'Titre', controller: _titre),
++        AdField(label: 'Année', controller: _annee, keyboardType: TextInputType.number),
++        AdDropdown(label: 'Filière', value: _filiere, options: const ['MP', 'PC', 'TSI', 'BIO', 'TECHNO'], onChanged: (v) => setState(() => _filiere = v!)),
++        const SizedBox(height: 8),
++        AdBtn(label: 'Enregistrer', full: true, loading: _saving, onPressed: _save),
++      ],
++    );
++  }
++}
+diff --git a/lib/features/admin/presentation/admin_dashboard_screen.dart b/lib/features/admin/presentation/admin_dashboard_screen.dart
+new file mode 100644
+index 0000000..2ff4a3a
+--- /dev/null
++++ b/lib/features/admin/presentation/admin_dashboard_screen.dart
+@@ -0,0 +1,243 @@
++import 'package:flutter/material.dart';
++import '../../../core/api/api_client.dart';
++import '../../../core/theme/nexa_theme.dart';
++import '../widgets/admin_widgets.dart';
++
++class AdminDashboardScreen extends StatefulWidget {
++  const AdminDashboardScreen({super.key});
++
++  @override
++  State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
++}
++
++class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
++  Map<String, dynamic>? _data;
++  bool _loading = true;
++  String? _error;
++
++  @override
++  void initState() {
++    super.initState();
++    _load();
++  }
++
++  Future<void> _load() async {
++    setState(() { _loading = true; _error = null; });
++    try {
++      final data = await ApiClient.getAdminDashboard();
++      setState(() => _data = data);
++    } catch (_) {
++      setState(() => _error = 'Impossible de charger le tableau de bord.');
++    } finally {
++      setState(() => _loading = false);
++    }
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    if (_loading) return const Center(child: CircularProgressIndicator(color: NexaColors.blue));
++    if (_error != null) return _errorView();
++
++    final kpis = _data?['kpis'] as Map<String, dynamic>? ?? {};
++    final byFiliere = (_data?['studentsByFiliere'] as List<dynamic>? ?? []);
++    final dailyActivity = (_data?['dailyActivity'] as List<dynamic>? ?? []);
++
++    return RefreshIndicator(
++      onRefresh: _load,
++      color: NexaColors.blue,
++      child: ListView(
++        padding: const EdgeInsets.all(16),
++        children: [
++          // KPI grid — 2 columns on mobile (mockup uses 4 in a row on desktop)
++          GridView.count(
++            crossAxisCount: 2,
++            shrinkWrap: true,
++            physics: const NeverScrollableScrollPhysics(),
++            mainAxisSpacing: 12,
++            crossAxisSpacing: 12,
++            childAspectRatio: 1.35,
++            children: [
++              AdStatCard(icon: '👥', label: 'Étudiants inscrits', value: '${kpis['totalStudents'] ?? 0}', color: NexaColors.blue),
++              AdStatCard(icon: '⚡', label: "XP distribués aujourd'hui", value: '${kpis['xpToday'] ?? 0}', color: NexaColors.gold),
++              AdStatCard(icon: '📝', label: 'Exercices résolus (semaine)', value: '${kpis['exercisesThisWeek'] ?? 0}', color: NexaColors.green),
++              AdStatCard(icon: '🏁', label: 'Sujets de concours', value: '${kpis['totalContests'] ?? 0}', color: NexaColors.purple),
++            ],
++          ),
++          const SizedBox(height: 20),
++
++          AdCard(
++            child: Column(
++              crossAxisAlignment: CrossAxisAlignment.start,
++              children: [
++                Row(
++                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
++                  children: [
++                    Column(
++                      crossAxisAlignment: CrossAxisAlignment.start,
++                      children: const [
++                        Text('Activité quotidienne', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
++                        Text('Exercices résolus (7 derniers jours)', style: TextStyle(fontSize: 11, color: NexaColors.txt3)),
++                      ],
++                    ),
++                    Container(
++                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
++                      decoration: BoxDecoration(color: NexaColors.blueLight, borderRadius: BorderRadius.circular(16)),
++                      child: const Row(mainAxisSize: MainAxisSize.min, children: [
++                        Icon(Icons.circle, size: 7, color: NexaColors.green),
++                        SizedBox(width: 5),
++                        Text('Live', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: NexaColors.blue)),
++                      ]),
++                    ),
++                  ],
++                ),
++                const SizedBox(height: 16),
++                AdBarChart(
++                  data: dailyActivity.map((d) {
++                    final dateStr = d['date']?.toString() ?? '';
++                    final label = dateStr.length >= 10 ? dateStr.substring(8, 10) : '?';
++                    return MapEntry(label, (d['count'] ?? 0) as num);
++                  }).toList(),
++                  color: NexaColors.blue,
++                ),
++              ],
++            ),
++          ),
++          const SizedBox(height: 14),
++
++          AdCard(
++            child: Column(
++              crossAxisAlignment: CrossAxisAlignment.start,
++              children: [
++                const Text('Répartition', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
++                const Text('Étudiants par spécialité', style: TextStyle(fontSize: 11, color: NexaColors.txt3)),
++                const SizedBox(height: 14),
++                Row(
++                  children: [
++                    AdDonutChart(
++                      segments: byFiliere.map((f) => MapEntry(f['filiere']?.toString() ?? '—', (f['count'] ?? 0) as num)).toList(),
++                      colors: const [NexaColors.blue, NexaColors.purple, NexaColors.green, Color(0xFFDB2777), NexaColors.gold],
++                    ),
++                    const SizedBox(width: 16),
++                    Expanded(
++                      child: Column(
++                        crossAxisAlignment: CrossAxisAlignment.start,
++                        children: byFiliere.asMap().entries.map((e) {
++                          final colors = [NexaColors.blue, NexaColors.purple, NexaColors.green, const Color(0xFFDB2777), NexaColors.gold];
++                          final f = e.value;
++                          return Padding(
++                            padding: const EdgeInsets.symmetric(vertical: 3),
++                            child: Row(
++                              children: [
++                                Container(width: 8, height: 8, decoration: BoxDecoration(color: colors[e.key % colors.length], shape: BoxShape.circle)),
++                                const SizedBox(width: 6),
++                                Text('${f['filiere'] ?? '—'}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
++                                const Spacer(),
++                                Text('${f['count'] ?? 0}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: NexaColors.txt2)),
++                              ],
++                            ),
++                          );
++                        }).toList(),
++                      ),
++                    ),
++                  ],
++                ),
++              ],
++            ),
++          ),
++          const SizedBox(height: 14),
++          _TopStudentsCard(),
++        ],
++      ),
++    );
++  }
++
++  Widget _errorView() {
++    return Center(
++      child: Padding(
++        padding: const EdgeInsets.all(24),
++        child: Column(mainAxisSize: MainAxisSize.min, children: [
++          const Icon(Icons.error_outline, color: NexaColors.red, size: 40),
++          const SizedBox(height: 12),
++          Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: NexaColors.txt2)),
++          const SizedBox(height: 16),
++          AdBtn(label: 'Réessayer', onPressed: _load),
++        ]),
++      ),
++    );
++  }
++}
++
++class _TopStudentsCard extends StatefulWidget {
++  @override
++  State<_TopStudentsCard> createState() => _TopStudentsCardState();
++}
++
++class _TopStudentsCardState extends State<_TopStudentsCard> {
++  List<dynamic>? _students;
++
++  @override
++  void initState() {
++    super.initState();
++    _load();
++  }
++
++  Future<void> _load() async {
++    try {
++      final all = await ApiClient.getAdminUsers();
++      all.sort((a, b) => ((b['xpTotal'] ?? 0) as num).compareTo((a['xpTotal'] ?? 0) as num));
++      if (mounted) setState(() => _students = all.take(6).toList());
++    } catch (_) {
++      if (mounted) setState(() => _students = []);
++    }
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    return AdCard(
++      child: Column(
++        crossAxisAlignment: CrossAxisAlignment.start,
++        children: [
++          const Text('Top Étudiants', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
++          const SizedBox(height: 10),
++          if (_students == null)
++            const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
++          else if (_students!.isEmpty)
++            const Padding(padding: EdgeInsets.all(12), child: Text('Aucun étudiant pour le moment.', style: TextStyle(color: NexaColors.txt3, fontSize: 12)))
++          else
++            ..._students!.asMap().entries.map((e) {
++              final i = e.key;
++              final s = e.value;
++              final rankColor = i == 0 ? NexaColors.gold : i == 1 ? const Color(0xFF9CA3AF) : i == 2 ? const Color(0xFFB45309) : NexaColors.blueLight;
++              final rankTxt = i < 3 ? Colors.white : NexaColors.blue;
++              return Padding(
++                padding: const EdgeInsets.symmetric(vertical: 6),
++                child: Row(
++                  children: [
++                    Container(
++                      width: 22, height: 22,
++                      decoration: BoxDecoration(color: rankColor, borderRadius: BorderRadius.circular(6)),
++                      alignment: Alignment.center,
++                      child: Text('${i + 1}', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: rankTxt)),
++                    ),
++                    const SizedBox(width: 10),
++                    AdAvatar(name: '${s['prenom'] ?? '?'}', color: avatarColorFor(i), size: 30),
++                    const SizedBox(width: 10),
++                    Expanded(
++                      child: Column(
++                        crossAxisAlignment: CrossAxisAlignment.start,
++                        children: [
++                          Text('${s['prenom'] ?? ''} ${s['nom'] ?? ''}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
++                          Text('${s['ecole'] ?? '—'}', style: const TextStyle(fontSize: 10, color: NexaColors.txt3)),
++                        ],
++                      ),
++                    ),
++                    Text('${s['xpTotal'] ?? 0} XP', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: NexaColors.gold)),
++                  ],
++                ),
++              );
++            }),
++        ],
++      ),
++    );
++  }
++}
+diff --git a/lib/features/admin/presentation/admin_forum_screen.dart b/lib/features/admin/presentation/admin_forum_screen.dart
+new file mode 100644
+index 0000000..66d26b8
+--- /dev/null
++++ b/lib/features/admin/presentation/admin_forum_screen.dart
+@@ -0,0 +1,196 @@
++import 'package:flutter/material.dart';
++import '../../../core/api/api_client.dart';
++import '../../../core/theme/nexa_theme.dart';
++import '../widgets/admin_widgets.dart';
++
++class AdminForumScreen extends StatefulWidget {
++  const AdminForumScreen({super.key});
++
++  @override
++  State<AdminForumScreen> createState() => _AdminForumScreenState();
++}
++
++class _AdminForumScreenState extends State<AdminForumScreen> {
++  Map<String, dynamic>? _stats;
++  List<dynamic> _posts = [];
++  bool _loading = true;
++  String? _error;
++  String _filter = 'Tout'; // Tout | REPORTED | PUBLISHED
++
++  @override
++  void initState() {
++    super.initState();
++    _load();
++  }
++
++  Future<void> _load() async {
++    setState(() { _loading = true; _error = null; });
++    try {
++      final results = await Future.wait([
++        ApiClient.getModerationStats(),
++        ApiClient.getAllModeratedPosts(),
++      ]);
++      setState(() {
++        _stats = results[0] as Map<String, dynamic>;
++        _posts = results[1] as List<dynamic>;
++      });
++    } catch (_) {
++      setState(() => _error = 'Impossible de charger la modération.');
++    } finally {
++      setState(() => _loading = false);
++    }
++  }
++
++  List<dynamic> get _filtered {
++    if (_filter == 'Tout') return _posts;
++    return _posts.where((p) => p['status'] == _filter).toList();
++  }
++
++  Future<void> _updateStatus(String id, String status) async {
++    try {
++      await ApiClient.updatePostStatus(id, status);
++      if (mounted) { showAdSnack(context, status == 'PUBLISHED' ? 'Post validé' : 'Post supprimé'); _load(); }
++    } catch (_) {
++      if (mounted) showAdSnack(context, "Échec de l'action", error: true);
++    }
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    if (_loading) return const Center(child: CircularProgressIndicator(color: NexaColors.blue));
++    if (_error != null) {
++      return Center(
++        child: Column(mainAxisSize: MainAxisSize.min, children: [
++          Text(_error!, style: const TextStyle(color: NexaColors.txt2)),
++          const SizedBox(height: 12),
++          AdBtn(label: 'Réessayer', onPressed: _load),
++        ]),
++      );
++    }
++
++    final reportedCount = _posts.where((p) => p['status'] == 'REPORTED').length;
++
++    return RefreshIndicator(
++      onRefresh: _load,
++      color: NexaColors.blue,
++      child: ListView(
++        padding: const EdgeInsets.all(16),
++        children: [
++          Text(reportedCount > 0 ? '$reportedCount post${reportedCount > 1 ? "s" : ""} signalé${reportedCount > 1 ? "s" : ""} en attente' : 'Aucun post signalé',
++              style: const TextStyle(color: NexaColors.txt3, fontSize: 13)),
++          const SizedBox(height: 12),
++          GridView.count(
++            crossAxisCount: 2,
++            shrinkWrap: true,
++            physics: const NeverScrollableScrollPhysics(),
++            mainAxisSpacing: 10, crossAxisSpacing: 10,
++            childAspectRatio: 1.7,
++            children: [
++              _statTile('💬', '${_stats?['totalPosts'] ?? _posts.length}', 'Total posts', NexaColors.blue),
++              _statTile('✅', '${_stats?['published'] ?? _posts.where((p) => p['status'] == 'PUBLISHED').length}', 'Publiés', NexaColors.green),
++              _statTile('🚩', '${_stats?['reported'] ?? reportedCount}', 'Signalés', NexaColors.red),
++              _statTile('❤️', '${_stats?['totalLikes'] ?? '—'}', 'Total likes', NexaColors.gold),
++            ],
++          ),
++          const SizedBox(height: 14),
++          SingleChildScrollView(
++            scrollDirection: Axis.horizontal,
++            child: Row(children: ['Tout', 'REPORTED', 'PUBLISHED'].map((f) {
++              final active = _filter == f;
++              final label = f == 'Tout' ? 'Tout' : f == 'REPORTED' ? '🚩 Signalés' : '✅ Publiés';
++              return Padding(
++                padding: const EdgeInsets.only(right: 8),
++                child: GestureDetector(
++                  onTap: () => setState(() => _filter = f),
++                  child: Container(
++                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
++                    decoration: BoxDecoration(
++                      color: active ? NexaColors.blueLight : Colors.white,
++                      borderRadius: BorderRadius.circular(20),
++                      border: Border.all(color: active ? NexaColors.blue : NexaColors.border),
++                    ),
++                    child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? NexaColors.blue : NexaColors.txt3)),
++                  ),
++                ),
++              );
++            }).toList()),
++          ),
++          const SizedBox(height: 14),
++          if (_filtered.isEmpty)
++            const Padding(padding: EdgeInsets.all(24), child: Center(child: Text('Aucun post', style: TextStyle(color: NexaColors.txt3))))
++          else
++            ..._filtered.map(_postCard),
++        ],
++      ),
++    );
++  }
++
++  Widget _statTile(String icon, String value, String label, Color color) {
++    return AdCard(
++      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
++        Text(icon, style: const TextStyle(fontSize: 16)),
++        const SizedBox(height: 4),
++        Text(value, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: color)),
++        Text(label, style: const TextStyle(fontSize: 10, color: NexaColors.txt3)),
++      ]),
++    );
++  }
++
++  Widget _postCard(dynamic p) {
++    final reported = p['status'] == 'REPORTED';
++    final author = p['author'] as Map<String, dynamic>?;
++    final authorName = author != null ? '${author['prenom'] ?? ''} ${author['nom'] ?? ''}'.trim() : 'Inconnu';
++
++    return AdCard(
++      padding: const EdgeInsets.all(14),
++      child: Column(
++        crossAxisAlignment: CrossAxisAlignment.start,
++        children: [
++          Row(children: [
++            Expanded(
++              child: Text('${reported ? "🚩 " : ""}${p['titre'] ?? ''}',
++                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis),
++            ),
++            AdTag(
++              label: reported ? 'Signalé' : 'Publié',
++              color: reported ? const Color(0xFF991B1B) : const Color(0xFF166534),
++              bg: reported ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
++            ),
++          ]),
++          const SizedBox(height: 4),
++          Text('$authorName · ${p['matiere'] ?? ''}', style: const TextStyle(fontSize: 11, color: NexaColors.txt3)),
++          const SizedBox(height: 10),
++          Row(children: [
++            Expanded(
++              child: Row(children: [
++                AdBtn(label: '', icon: Icons.check, small: true, variant: AdBtnVariant.green,
++                    onPressed: reported ? () => _updateStatus(p['id'], 'PUBLISHED') : null),
++                const SizedBox(width: 8),
++                AdBtn(label: 'Supprimer', icon: Icons.delete_outline, small: true, variant: AdBtnVariant.red,
++                    onPressed: () => _confirmRemove(p['id'])),
++              ]),
++            ),
++          ]),
++        ],
++      ),
++    );
++  }
++
++  void _confirmRemove(String id) {
++    showDialog(
++      context: context,
++      builder: (ctx) => AlertDialog(
++        title: const Text('Supprimer ce post ?'),
++        content: const Text('Cette action est définitive.'),
++        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
++        actions: [
++          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Annuler')),
++          TextButton(
++            onPressed: () { Navigator.of(ctx).pop(); _updateStatus(id, 'REMOVED'); },
++            child: const Text('Supprimer', style: TextStyle(color: NexaColors.red, fontWeight: FontWeight.w700)),
++          ),
++        ],
++      ),
++    );
++  }
++}
+diff --git a/lib/features/admin/presentation/admin_settings_screen.dart b/lib/features/admin/presentation/admin_settings_screen.dart
+new file mode 100644
+index 0000000..b3aed32
+--- /dev/null
++++ b/lib/features/admin/presentation/admin_settings_screen.dart
+@@ -0,0 +1,216 @@
++import 'package:flutter/material.dart';
++import '../../../core/api/api_client.dart';
++import '../../../core/theme/nexa_theme.dart';
++import '../widgets/admin_widgets.dart';
++
++class AdminSettingsScreen extends StatefulWidget {
++  const AdminSettingsScreen({super.key});
++
++  @override
++  State<AdminSettingsScreen> createState() => _AdminSettingsScreenState();
++}
++
++class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
++  Map<String, dynamic>? _settings;
++  bool _loading = true;
++  bool _saving = false;
++  String? _error;
++
++  late TextEditingController _platformName;
++  late TextEditingController _supportEmail;
++  late TextEditingController _websiteUrl;
++  late TextEditingController _xpDirectAnswer;
++  late TextEditingController _xpForumPost;
++  late TextEditingController _xpForumReply;
++  late TextEditingController _penalty1, _penalty2, _penalty3, _penalty4;
++  bool _maintenanceMode = false;
++
++  @override
++  void initState() {
++    super.initState();
++    _platformName = TextEditingController();
++    _supportEmail = TextEditingController();
++    _websiteUrl = TextEditingController();
++    _xpDirectAnswer = TextEditingController();
++    _xpForumPost = TextEditingController();
++    _xpForumReply = TextEditingController();
++    _penalty1 = TextEditingController();
++    _penalty2 = TextEditingController();
++    _penalty3 = TextEditingController();
++    _penalty4 = TextEditingController();
++    _load();
++  }
++
++  Future<void> _load() async {
++    setState(() { _loading = true; _error = null; });
++    try {
++      final s = await ApiClient.getAdminSettings();
++      setState(() {
++        _settings = s;
++        _platformName.text = '${s['platformName'] ?? ''}';
++        _supportEmail.text = '${s['supportEmail'] ?? ''}';
++        _websiteUrl.text = '${s['websiteUrl'] ?? ''}';
++        _xpDirectAnswer.text = '${s['xpPerDirectAnswer'] ?? 10}';
++        _xpForumPost.text = '${s['xpPerForumPost'] ?? 3}';
++        _xpForumReply.text = '${s['xpPerForumReply'] ?? 1}';
++        _penalty1.text = '${s['hintPenaltyPercent1'] ?? 10}';
++        _penalty2.text = '${s['hintPenaltyPercent2'] ?? 20}';
++        _penalty3.text = '${s['hintPenaltyPercent3'] ?? 30}';
++        _penalty4.text = '${s['hintPenaltyPercent4'] ?? 40}';
++        _maintenanceMode = s['maintenanceMode'] == true;
++      });
++    } catch (_) {
++      setState(() => _error = 'Impossible de charger les paramètres.');
++    } finally {
++      setState(() => _loading = false);
++    }
++  }
++
++  Future<void> _save() async {
++    setState(() => _saving = true);
++    try {
++      await ApiClient.updateAdminSettings({
++        'platformName': _platformName.text.trim(),
++        'supportEmail': _supportEmail.text.trim(),
++        'websiteUrl': _websiteUrl.text.trim(),
++        'xpPerDirectAnswer': int.tryParse(_xpDirectAnswer.text) ?? 10,
++        'xpPerForumPost': int.tryParse(_xpForumPost.text) ?? 3,
++        'xpPerForumReply': int.tryParse(_xpForumReply.text) ?? 1,
++        'hintPenaltyPercent1': int.tryParse(_penalty1.text) ?? 10,
++        'hintPenaltyPercent2': int.tryParse(_penalty2.text) ?? 20,
++        'hintPenaltyPercent3': int.tryParse(_penalty3.text) ?? 30,
++        'hintPenaltyPercent4': int.tryParse(_penalty4.text) ?? 40,
++      });
++      if (mounted) showAdSnack(context, 'Paramètres enregistrés');
++    } catch (_) {
++      if (mounted) showAdSnack(context, "Échec de l'enregistrement", error: true);
++    } finally {
++      if (mounted) setState(() => _saving = false);
++    }
++  }
++
++  Future<void> _toggleMaintenance(bool value) async {
++    final previous = _maintenanceMode;
++    setState(() => _maintenanceMode = value);
++    try {
++      await ApiClient.updateMaintenanceMode(value);
++      if (mounted) {
++        showAdSnack(context, value ? 'Mode maintenance activé' : 'Mode maintenance désactivé', error: value);
++      }
++    } catch (_) {
++      if (mounted) {
++        setState(() => _maintenanceMode = previous);
++        showAdSnack(context, 'Échec du changement de mode', error: true);
++      }
++    }
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    if (_loading) return const Center(child: CircularProgressIndicator(color: NexaColors.blue));
++    if (_error != null) {
++      return Center(
++        child: Column(mainAxisSize: MainAxisSize.min, children: [
++          Text(_error!, style: const TextStyle(color: NexaColors.txt2)),
++          const SizedBox(height: 12),
++          AdBtn(label: 'Réessayer', onPressed: _load),
++        ]),
++      );
++    }
++
++    return ListView(
++      padding: const EdgeInsets.all(16),
++      children: [
++        // Maintenance mode — most consequential toggle, placed first
++        AdCard(
++          child: Column(
++            crossAxisAlignment: CrossAxisAlignment.start,
++            children: [
++              Row(
++                mainAxisAlignment: MainAxisAlignment.spaceBetween,
++                children: [
++                  Expanded(
++                    child: Column(
++                      crossAxisAlignment: CrossAxisAlignment.start,
++                      children: [
++                        const Text('🚧 Mode maintenance', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
++                        Text(
++                          _maintenanceMode ? "L'application est actuellement fermée aux étudiants." : 'Application accessible normalement.',
++                          style: TextStyle(fontSize: 11, color: _maintenanceMode ? NexaColors.red : NexaColors.txt3),
++                        ),
++                      ],
++                    ),
++                  ),
++                  Switch(value: _maintenanceMode, onChanged: _toggleMaintenance, activeColor: NexaColors.red),
++                ],
++              ),
++            ],
++          ),
++        ),
++        const SizedBox(height: 14),
++
++        AdCard(
++          child: Column(
++            crossAxisAlignment: CrossAxisAlignment.start,
++            children: [
++              const Text('🌐 Général', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
++              const SizedBox(height: 12),
++              AdField(label: 'Nom de la plateforme', controller: _platformName),
++              AdField(label: 'URL plateforme', controller: _websiteUrl),
++              AdField(label: 'Contact support', controller: _supportEmail, keyboardType: TextInputType.emailAddress),
++            ],
++          ),
++        ),
++        const SizedBox(height: 14),
++
++        AdCard(
++          child: Column(
++            crossAxisAlignment: CrossAxisAlignment.start,
++            children: [
++              const Text('🎮 Gamification', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
++              const SizedBox(height: 12),
++              AdField(label: 'XP par réponse directe', controller: _xpDirectAnswer, keyboardType: TextInputType.number),
++              AdField(label: 'XP par post forum', controller: _xpForumPost, keyboardType: TextInputType.number),
++              AdField(label: 'XP par réponse forum', controller: _xpForumReply, keyboardType: TextInputType.number),
++              const Text('PÉNALITÉ PAR INDICE UTILISÉ (%)', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: NexaColors.txt3, letterSpacing: 0.6)),
++              const SizedBox(height: 6),
++              Row(children: [
++                Expanded(child: _smallNumField('1er', _penalty1)),
++                const SizedBox(width: 8),
++                Expanded(child: _smallNumField('2e', _penalty2)),
++                const SizedBox(width: 8),
++                Expanded(child: _smallNumField('3e', _penalty3)),
++                const SizedBox(width: 8),
++                Expanded(child: _smallNumField('4e', _penalty4)),
++              ]),
++            ],
++          ),
++        ),
++        const SizedBox(height: 16),
++        AdBtn(label: '💾 Enregistrer les modifications', full: true, loading: _saving, onPressed: _save),
++      ],
++    );
++  }
++
++  Widget _smallNumField(String label, TextEditingController c) {
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.start,
++      children: [
++        Text(label, style: const TextStyle(fontSize: 10, color: NexaColors.txt3)),
++        const SizedBox(height: 4),
++        TextField(
++          controller: c,
++          keyboardType: TextInputType.number,
++          textAlign: TextAlign.center,
++          style: const TextStyle(fontSize: 13),
++          decoration: InputDecoration(
++            isDense: true,
++            contentPadding: const EdgeInsets.symmetric(vertical: 10),
++            filled: true, fillColor: NexaColors.bg,
++            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: NexaColors.border)),
++          ),
++        ),
++      ],
++    );
++  }
++}
+diff --git a/lib/features/admin/presentation/admin_shell.dart b/lib/features/admin/presentation/admin_shell.dart
+new file mode 100644
+index 0000000..55bfb97
+--- /dev/null
++++ b/lib/features/admin/presentation/admin_shell.dart
+@@ -0,0 +1,219 @@
++import 'package:flutter/material.dart';
++import '../../../core/api/api_client.dart';
++import '../../../core/theme/nexa_theme.dart';
++import 'admin_dashboard_screen.dart';
++import 'admin_students_screen.dart';
++import 'admin_content_screen.dart';
++import 'admin_forum_screen.dart';
++import 'admin_settings_screen.dart';
++
++class AdminShell extends StatefulWidget {
++  final VoidCallback onLogout;
++  const AdminShell({super.key, required this.onLogout});
++
++  @override
++  State<AdminShell> createState() => _AdminShellState();
++}
++
++class _AdminTab {
++  final String id;
++  final IconData icon;
++  final String label;
++  const _AdminTab(this.id, this.icon, this.label);
++}
++
++const _tabs = [
++  _AdminTab('dashboard', Icons.grid_view_rounded, 'Dashboard'),
++  _AdminTab('students', Icons.groups_rounded, 'Étudiants'),
++  _AdminTab('content', Icons.menu_book_rounded, 'Contenu'),
++  _AdminTab('forum', Icons.forum_rounded, 'Modération'),
++  _AdminTab('settings', Icons.settings_rounded, 'Paramètres'),
++];
++
++class _AdminShellState extends State<AdminShell> {
++  String _tab = 'dashboard';
++
++  Widget _screen() {
++    switch (_tab) {
++      case 'students':
++        return const AdminStudentsScreen();
++      case 'content':
++        return const AdminContentScreen();
++      case 'forum':
++        return const AdminForumScreen();
++      case 'settings':
++        return const AdminSettingsScreen();
++      default:
++        return const AdminDashboardScreen();
++    }
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    final current = _tabs.firstWhere((t) => t.id == _tab);
++    final profile = ApiClient.cachedProfile;
++    final adminName = profile != null ? '${profile['prenom'] ?? ''} ${profile['nom'] ?? ''}'.trim() : 'Admin';
++
++    return Scaffold(
++      backgroundColor: NexaColors.bg,
++      drawer: _buildDrawer(adminName),
++      appBar: AppBar(
++        backgroundColor: NexaColors.navy,
++        elevation: 0,
++        title: Row(
++          children: [
++            Icon(current.icon, size: 18, color: Colors.white70),
++            const SizedBox(width: 8),
++            Text(current.label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
++          ],
++        ),
++        actions: [
++          Container(
++            margin: const EdgeInsets.only(right: 12),
++            width: 32, height: 32,
++            decoration: const BoxDecoration(
++              gradient: LinearGradient(colors: [NexaColors.gold, Color(0xFFFF8F00)]),
++              shape: BoxShape.circle,
++            ),
++            alignment: Alignment.center,
++            child: const Text('A', style: TextStyle(color: NexaColors.navy, fontWeight: FontWeight.w800, fontSize: 13)),
++          ),
++        ],
++      ),
++      body: SafeArea(top: false, child: _screen()),
++    );
++  }
++
++  Widget _buildDrawer(String adminName) {
++    return Drawer(
++      backgroundColor: NexaColors.navy,
++      child: SafeArea(
++        child: Column(
++          children: [
++            const Padding(
++              padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
++              child: Row(
++                children: [
++                  _NexaMark(),
++                  SizedBox(width: 10),
++                  Column(
++                    crossAxisAlignment: CrossAxisAlignment.start,
++                    children: [
++                      Text('NEXA', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: Colors.white)),
++                      Text('Administration', style: TextStyle(fontSize: 11, color: Colors.white54)),
++                    ],
++                  ),
++                ],
++              ),
++            ),
++            const Padding(
++              padding: EdgeInsets.fromLTRB(20, 8, 20, 6),
++              child: Align(
++                alignment: Alignment.centerLeft,
++                child: Text("PANEL D'ADMINISTRATION",
++                    style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white30, letterSpacing: 1.2)),
++              ),
++            ),
++            const Divider(color: Colors.white12, height: 1),
++            Expanded(
++              child: ListView(
++                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
++                children: _tabs.map((t) {
++                  final active = _tab == t.id;
++                  return Container(
++                    margin: const EdgeInsets.symmetric(vertical: 2),
++                    decoration: BoxDecoration(
++                      color: active ? NexaColors.blue.withOpacity(0.22) : Colors.transparent,
++                      borderRadius: BorderRadius.circular(10),
++                    ),
++                    child: ListTile(
++                      leading: Icon(t.icon, size: 20, color: active ? Colors.white : Colors.white54),
++                      title: Text(t.label, style: TextStyle(color: active ? Colors.white : Colors.white60, fontWeight: active ? FontWeight.w700 : FontWeight.w500, fontSize: 13)),
++                      onTap: () {
++                        setState(() => _tab = t.id);
++                        Navigator.of(context).pop();
++                      },
++                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
++                    ),
++                  );
++                }).toList(),
++              ),
++            ),
++            const Divider(color: Colors.white12, height: 1),
++            Padding(
++              padding: const EdgeInsets.all(14),
++              child: Row(
++                children: [
++                  Container(
++                    width: 32, height: 32,
++                    decoration: const BoxDecoration(
++                      gradient: LinearGradient(colors: [NexaColors.gold, Color(0xFFFF8F00)]),
++                      shape: BoxShape.circle,
++                    ),
++                    alignment: Alignment.center,
++                    child: const Text('A', style: TextStyle(color: NexaColors.navy, fontWeight: FontWeight.w800, fontSize: 13)),
++                  ),
++                  const SizedBox(width: 10),
++                  Expanded(
++                    child: Column(
++                      crossAxisAlignment: CrossAxisAlignment.start,
++                      children: [
++                        Text(adminName.isEmpty ? 'Admin NEXA' : adminName,
++                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white70), overflow: TextOverflow.ellipsis),
++                        const Text('Super Administrateur', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: NexaColors.gold)),
++                      ],
++                    ),
++                  ),
++                  IconButton(
++                    icon: const Icon(Icons.logout, color: Colors.white54, size: 18),
++                    onPressed: widget.onLogout,
++                  ),
++                ],
++              ),
++            ),
++          ],
++        ),
++      ),
++    );
++  }
++}
++
++class _NexaMark extends StatelessWidget {
++  const _NexaMark();
++  @override
++  Widget build(BuildContext context) {
++    return SizedBox(
++      width: 30, height: 30,
++      child: CustomPaint(painter: _NexaMarkPainter()),
++    );
++  }
++}
++
++class _NexaMarkPainter extends CustomPainter {
++  @override
++  void paint(Canvas canvas, Size size) {
++    final scale = size.width / 40;
++    final paint1 = Paint()
++      ..color = NexaColors.blue2
++      ..strokeWidth = 5 * scale
++      ..strokeCap = StrokeCap.round
++      ..style = PaintingStyle.stroke;
++    final path1 = Path()
++      ..moveTo(6 * scale, 34 * scale)
++      ..lineTo(6 * scale, 6 * scale)
++      ..lineTo(26 * scale, 26 * scale)
++      ..lineTo(26 * scale, 6 * scale);
++    canvas.drawPath(path1, paint1);
++
++    final gold = Paint()..color = NexaColors.gold;
++    final trianglePath = Path()
++      ..moveTo(22 * scale, 18 * scale)
++      ..lineTo(28 * scale, 10 * scale)
++      ..lineTo(33 * scale, 17 * scale)
++      ..close();
++    canvas.drawPath(trianglePath, gold);
++  }
++
++  @override
++  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
++}
+diff --git a/lib/features/admin/presentation/admin_students_screen.dart b/lib/features/admin/presentation/admin_students_screen.dart
+new file mode 100644
+index 0000000..83d4916
+--- /dev/null
++++ b/lib/features/admin/presentation/admin_students_screen.dart
+@@ -0,0 +1,331 @@
++import 'package:flutter/material.dart';
++import '../../../core/api/api_client.dart';
++import '../../../core/theme/nexa_theme.dart';
++import '../widgets/admin_widgets.dart';
++
++class AdminStudentsScreen extends StatefulWidget {
++  const AdminStudentsScreen({super.key});
++
++  @override
++  State<AdminStudentsScreen> createState() => _AdminStudentsScreenState();
++}
++
++class _AdminStudentsScreenState extends State<AdminStudentsScreen> {
++  List<dynamic> _students = [];
++  bool _loading = true;
++  String? _error;
++  String _search = '';
++  String _filiereFilter = 'Tout';
++  String _statusFilter = 'Tout';
++
++  @override
++  void initState() {
++    super.initState();
++    _load();
++  }
++
++  Future<void> _load() async {
++    setState(() { _loading = true; _error = null; });
++    try {
++      final data = await ApiClient.getAdminUsers();
++      setState(() => _students = data);
++    } catch (_) {
++      setState(() => _error = 'Impossible de charger les étudiants.');
++    } finally {
++      setState(() => _loading = false);
++    }
++  }
++
++  List<dynamic> get _filtered {
++    return _students.where((s) {
++      if (_filiereFilter != 'Tout' && s['filiere'] != _filiereFilter) return false;
++      if (_statusFilter != 'Tout' && s['status'] != _statusFilter) return false;
++      if (_search.isNotEmpty) {
++        final q = _search.toLowerCase();
++        final name = '${s['prenom'] ?? ''} ${s['nom'] ?? ''}'.toLowerCase();
++        final email = '${s['email'] ?? ''}'.toLowerCase();
++        if (!name.contains(q) && !email.contains(q)) return false;
++      }
++      return true;
++    }).toList();
++  }
++
++  Future<void> _updateStatus(Map<String, dynamic> student, String status) async {
++    try {
++      await ApiClient.updateUserStatus(student['id'], status);
++      if (mounted) {
++        showAdSnack(context, 'Statut mis à jour');
++        Navigator.of(context).pop();
++        _load();
++      }
++    } catch (e) {
++      if (mounted) showAdSnack(context, "Échec de la mise à jour du statut", error: true);
++    }
++  }
++
++  Future<void> _promote(Map<String, dynamic> student) async {
++    try {
++      await ApiClient.updateUserRole(student['id'], 'ADMIN');
++      if (mounted) {
++        showAdSnack(context, '${student['prenom']} est maintenant administrateur');
++        Navigator.of(context).pop();
++        _load();
++      }
++    } catch (e) {
++      if (mounted) showAdSnack(context, "Échec de la promotion", error: true);
++    }
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    if (_loading) return const Center(child: CircularProgressIndicator(color: NexaColors.blue));
++    if (_error != null) {
++      return Center(
++        child: Column(mainAxisSize: MainAxisSize.min, children: [
++          Text(_error!, style: const TextStyle(color: NexaColors.txt2)),
++          const SizedBox(height: 12),
++          AdBtn(label: 'Réessayer', onPressed: _load),
++        ]),
++      );
++    }
++
++    final actifs = _students.where((s) => s['status'] == 'ACTIVE').length;
++    final suspendus = _students.where((s) => s['status'] == 'SUSPENDED').length;
++    final bannis = _students.where((s) => s['status'] == 'BANNED').length;
++
++    return RefreshIndicator(
++      onRefresh: _load,
++      color: NexaColors.blue,
++      child: ListView(
++        padding: const EdgeInsets.all(16),
++        children: [
++          Text('${_students.length} étudiants inscrits', style: const TextStyle(color: NexaColors.txt3, fontSize: 13)),
++          const SizedBox(height: 12),
++          Row(children: [
++            Expanded(child: _miniStat('✅', '$actifs', 'Actifs', NexaColors.green)),
++            const SizedBox(width: 8),
++            Expanded(child: _miniStat('⏸', '${_students.length - actifs - suspendus - bannis}', 'Autres', NexaColors.txt3)),
++            const SizedBox(width: 8),
++            Expanded(child: _miniStat('🚫', '$suspendus', 'Suspendus', NexaColors.red)),
++          ]),
++          const SizedBox(height: 14),
++          TextField(
++            decoration: InputDecoration(
++              hintText: 'Rechercher un étudiant...',
++              prefixIcon: const Icon(Icons.search, size: 20),
++              filled: true, fillColor: Colors.white,
++              contentPadding: const EdgeInsets.symmetric(vertical: 0),
++              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: NexaColors.border)),
++            ),
++            onChanged: (v) => setState(() => _search = v),
++          ),
++          const SizedBox(height: 10),
++          SingleChildScrollView(
++            scrollDirection: Axis.horizontal,
++            child: Row(children: [
++              _filterChip('Filière', _filiereFilter, ['Tout', 'MP', 'PC', 'TSI', 'BIO', 'TECHNO'], (v) => setState(() => _filiereFilter = v)),
++              const SizedBox(width: 8),
++              _filterChip('Statut', _statusFilter, ['Tout', 'ACTIVE', 'INACTIVE', 'SUSPENDED', 'BANNED'], (v) => setState(() => _statusFilter = v)),
++            ]),
++          ),
++          const SizedBox(height: 14),
++          if (_filtered.isEmpty)
++            const Padding(padding: EdgeInsets.all(24), child: Center(child: Text('Aucun étudiant trouvé', style: TextStyle(color: NexaColors.txt3))))
++          else
++            ..._filtered.asMap().entries.map((e) => _studentRow(e.value, e.key)),
++        ],
++      ),
++    );
++  }
++
++  Widget _miniStat(String icon, String value, String label, Color color) {
++    return AdCard(
++      padding: const EdgeInsets.symmetric(vertical: 12),
++      child: Column(children: [
++        Text(icon, style: const TextStyle(fontSize: 16)),
++        const SizedBox(height: 4),
++        Text(value, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17, color: color)),
++        Text(label, style: const TextStyle(fontSize: 10, color: NexaColors.txt3)),
++      ]),
++    );
++  }
++
++  Widget _filterChip(String label, String value, List<String> options, ValueChanged<String> onSelect) {
++    return PopupMenuButton<String>(
++      onSelected: onSelect,
++      itemBuilder: (_) => options.map((o) => PopupMenuItem(value: o, child: Text(o))).toList(),
++      child: Container(
++        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
++        decoration: BoxDecoration(
++          color: value == 'Tout' ? Colors.white : NexaColors.blueLight,
++          borderRadius: BorderRadius.circular(20),
++          border: Border.all(color: value == 'Tout' ? NexaColors.border : NexaColors.blue.withOpacity(0.3)),
++        ),
++        child: Row(mainAxisSize: MainAxisSize.min, children: [
++          Text(value == 'Tout' ? label : '$label: $value', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: value == 'Tout' ? NexaColors.txt2 : NexaColors.blue)),
++          const SizedBox(width: 4),
++          Icon(Icons.keyboard_arrow_down, size: 16, color: value == 'Tout' ? NexaColors.txt3 : NexaColors.blue),
++        ]),
++      ),
++    );
++  }
++
++  Widget _studentRow(Map<String, dynamic> s, int i) {
++    final name = '${s['prenom'] ?? ''} ${s['nom'] ?? ''}'.trim();
++    return AdCard(
++      padding: const EdgeInsets.all(12),
++      onTap: () => _openDetail(s),
++      child: Row(children: [
++        AdAvatar(name: name.isEmpty ? '?' : name, color: avatarColorFor(i), size: 38),
++        const SizedBox(width: 12),
++        Expanded(
++          child: Column(
++            crossAxisAlignment: CrossAxisAlignment.start,
++            children: [
++              Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
++              Text('${s['ecole'] ?? '—'} · ${s['filiere'] ?? '—'}', style: const TextStyle(fontSize: 11, color: NexaColors.txt3)),
++            ],
++          ),
++        ),
++        Column(
++          crossAxisAlignment: CrossAxisAlignment.end,
++          children: [
++            Text('${s['xpTotal'] ?? 0} XP', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: NexaColors.gold)),
++            const SizedBox(height: 4),
++            AdTag.status('${s['status'] ?? 'ACTIVE'}'),
++          ],
++        ),
++      ]),
++    );
++  }
++
++  void _openDetail(Map<String, dynamic> student) {
++    showAdModal(context, title: 'Détail étudiant', child: _StudentDetailContent(
++      student: student,
++      onSuspend: () => _updateStatus(student, 'SUSPENDED'),
++      onReactivate: () => _updateStatus(student, 'ACTIVE'),
++      onBan: () => _updateStatus(student, 'BANNED'),
++      onPromote: () => _promote(student),
++    ));
++  }
++}
++
++class _StudentDetailContent extends StatefulWidget {
++  final Map<String, dynamic> student;
++  final VoidCallback onSuspend;
++  final VoidCallback onReactivate;
++  final VoidCallback onBan;
++  final VoidCallback onPromote;
++  const _StudentDetailContent({
++    required this.student,
++    required this.onSuspend,
++    required this.onReactivate,
++    required this.onBan,
++    required this.onPromote,
++  });
++
++  @override
++  State<_StudentDetailContent> createState() => _StudentDetailContentState();
++}
++
++class _StudentDetailContentState extends State<_StudentDetailContent> {
++  Map<String, dynamic>? _detail;
++
++  @override
++  void initState() {
++    super.initState();
++    _load();
++  }
++
++  Future<void> _load() async {
++    try {
++      final d = await ApiClient.getAdminUserDetail(widget.student['id']);
++      if (mounted) setState(() => _detail = d);
++    } catch (_) {
++      if (mounted) setState(() => _detail = widget.student);
++    }
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    final s = _detail ?? widget.student;
++    final name = '${s['prenom'] ?? ''} ${s['nom'] ?? ''}'.trim();
++    final status = '${s['status'] ?? 'ACTIVE'}';
++
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.start,
++      children: [
++        Row(children: [
++          AdAvatar(name: name.isEmpty ? '?' : name, size: 52),
++          const SizedBox(width: 14),
++          Expanded(
++            child: Column(
++              crossAxisAlignment: CrossAxisAlignment.start,
++              children: [
++                Text(name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
++                Text('${s['email'] ?? ''}', style: const TextStyle(fontSize: 12, color: NexaColors.txt3)),
++                const SizedBox(height: 6),
++                Row(children: [
++                  if (s['filiere'] != null) ...[
++                    Container(
++                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
++                      decoration: BoxDecoration(color: NexaColors.blueLight, borderRadius: BorderRadius.circular(20)),
++                      child: Text('${s['filiere']}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: NexaColors.blue)),
++                    ),
++                    const SizedBox(width: 8),
++                  ],
++                  AdTag.status(status),
++                ]),
++              ],
++            ),
++          ),
++        ]),
++        const SizedBox(height: 18),
++        if (_detail == null)
++          const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
++        else ...[
++          GridView.count(
++            crossAxisCount: 4,
++            shrinkWrap: true,
++            physics: const NeverScrollableScrollPhysics(),
++            mainAxisSpacing: 8, crossAxisSpacing: 8,
++            childAspectRatio: 0.85,
++            children: [
++              _statTile('⚡', '${s['xpTotal'] ?? 0}', 'XP', NexaColors.gold),
++              _statTile('🔥', '${s['streak'] ?? 0}j', 'Streak', NexaColors.red),
++              _statTile('📝', '${s['exercisesSolved'] ?? '—'}', 'Résolus', NexaColors.blue),
++              _statTile('🎯', '${s['exercisesAttempted'] ?? '—'}', 'Tentés', NexaColors.txt2),
++            ],
++          ),
++          const SizedBox(height: 16),
++          Row(children: [
++            Expanded(child: AdBtn(label: status == 'SUSPENDED' || status == 'BANNED' ? '✅ Réactiver' : '🚫 Suspendre',
++                variant: status == 'SUSPENDED' || status == 'BANNED' ? AdBtnVariant.green : AdBtnVariant.red,
++                onPressed: status == 'SUSPENDED' || status == 'BANNED' ? widget.onReactivate : widget.onSuspend)),
++          ]),
++          const SizedBox(height: 8),
++          Row(children: [
++            Expanded(child: AdBtn(label: 'Bannir définitivement', variant: AdBtnVariant.red, onPressed: status == 'BANNED' ? null : widget.onBan)),
++          ]),
++          const SizedBox(height: 8),
++          Row(children: [
++            Expanded(child: AdBtn(label: '👑 Promouvoir admin', variant: AdBtnVariant.secondary, onPressed: widget.onPromote)),
++          ]),
++        ],
++      ],
++    );
++  }
++
++  Widget _statTile(String icon, String value, String label, Color color) {
++    return Container(
++      decoration: BoxDecoration(color: NexaColors.bg, borderRadius: BorderRadius.circular(10), border: Border.all(color: NexaColors.border)),
++      alignment: Alignment.center,
++      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
++        Text(icon, style: const TextStyle(fontSize: 15)),
++        const SizedBox(height: 3),
++        Text(value, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: color)),
++        Text(label, style: const TextStyle(fontSize: 9, color: NexaColors.txt3)),
++      ]),
++    );
++  }
++}
+diff --git a/lib/features/admin/widgets/admin_widgets.dart b/lib/features/admin/widgets/admin_widgets.dart
+new file mode 100644
+index 0000000..1d3b720
+--- /dev/null
++++ b/lib/features/admin/widgets/admin_widgets.dart
+@@ -0,0 +1,435 @@
++import 'package:flutter/material.dart';
++import '../../../core/theme/nexa_theme.dart';
++
++/// A rounded card matching the mockup's Card component.
++class AdCard extends StatelessWidget {
++  final Widget child;
++  final EdgeInsetsGeometry padding;
++  final VoidCallback? onTap;
++  const AdCard({super.key, required this.child, this.padding = const EdgeInsets.all(16), this.onTap});
++
++  @override
++  Widget build(BuildContext context) {
++    final card = Container(
++      padding: padding,
++      decoration: BoxDecoration(
++        color: NexaColors.card,
++        borderRadius: BorderRadius.circular(14),
++        border: Border.all(color: NexaColors.border),
++      ),
++      child: child,
++    );
++    if (onTap == null) return card;
++    return InkWell(borderRadius: BorderRadius.circular(14), onTap: onTap, child: card);
++  }
++}
++
++enum AdBtnVariant { primary, secondary, ghost, red, green, gold }
++
++/// A button matching the mockup's Btn component variants.
++class AdBtn extends StatelessWidget {
++  final String label;
++  final VoidCallback? onPressed;
++  final AdBtnVariant variant;
++  final bool small;
++  final bool full;
++  final IconData? icon;
++  final bool loading;
++
++  const AdBtn({
++    super.key,
++    required this.label,
++    required this.onPressed,
++    this.variant = AdBtnVariant.primary,
++    this.small = false,
++    this.full = false,
++    this.icon,
++    this.loading = false,
++  });
++
++  @override
++  Widget build(BuildContext context) {
++    Color bg, fg;
++    Border? border;
++    switch (variant) {
++      case AdBtnVariant.primary:
++        bg = NexaColors.blue; fg = Colors.white; border = null;
++        break;
++      case AdBtnVariant.secondary:
++        bg = Colors.white; fg = NexaColors.txt; border = Border.all(color: NexaColors.border);
++        break;
++      case AdBtnVariant.ghost:
++        bg = Colors.transparent; fg = NexaColors.txt2; border = null;
++        break;
++      case AdBtnVariant.red:
++        bg = const Color(0xFFFEF2F2); fg = const Color(0xFF991B1B); border = Border.all(color: const Color(0xFFFECACA));
++        break;
++      case AdBtnVariant.green:
++        bg = const Color(0xFFF0FDF4); fg = const Color(0xFF166534); border = Border.all(color: const Color(0xFF86EFAC));
++        break;
++      case AdBtnVariant.gold:
++        bg = NexaColors.gold; fg = NexaColors.navy; border = null;
++        break;
++    }
++
++    final child = loading
++        ? SizedBox(
++            width: small ? 14 : 18, height: small ? 14 : 18,
++            child: CircularProgressIndicator(strokeWidth: 2, color: fg),
++          )
++        : Row(
++            mainAxisSize: MainAxisSize.min,
++            children: [
++              if (icon != null) ...[Icon(icon, size: small ? 14 : 16, color: fg), const SizedBox(width: 6)],
++              Text(label, style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: small ? 12 : 13)),
++            ],
++          );
++
++    return SizedBox(
++      width: full ? double.infinity : null,
++      child: Material(
++        color: bg,
++        borderRadius: BorderRadius.circular(9),
++        child: InkWell(
++          borderRadius: BorderRadius.circular(9),
++          onTap: (loading || onPressed == null) ? null : onPressed,
++          child: Container(
++            padding: EdgeInsets.symmetric(horizontal: small ? 12 : 16, vertical: small ? 8 : 12),
++            decoration: BoxDecoration(
++              borderRadius: BorderRadius.circular(9),
++              border: border,
++            ),
++            alignment: Alignment.center,
++            child: child,
++          ),
++        ),
++      ),
++    );
++  }
++}
++
++/// A pill-shaped status/category tag matching the mockup's Tag component.
++class AdTag extends StatelessWidget {
++  final String label;
++  final Color color;
++  final Color bg;
++  const AdTag({super.key, required this.label, required this.color, required this.bg});
++
++  factory AdTag.status(String status) {
++    switch (status.toUpperCase()) {
++      case 'ACTIVE':
++        return const AdTag(label: 'actif', color: Color(0xFF166534), bg: Color(0xFFF0FDF4));
++      case 'INACTIVE':
++        return const AdTag(label: 'inactif', color: NexaColors.txt3, bg: Color(0xFFF1F5F9));
++      case 'SUSPENDED':
++        return const AdTag(label: 'suspendu', color: Color(0xFF991B1B), bg: Color(0xFFFEF2F2));
++      case 'BANNED':
++        return const AdTag(label: 'banni', color: Colors.white, bg: NexaColors.red);
++      default:
++        return AdTag(label: status, color: NexaColors.txt3, bg: const Color(0xFFF1F5F9));
++    }
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    return Container(
++      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
++      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
++      child: Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700)),
++    );
++  }
++}
++
++/// A KPI stat card matching the mockup's StatCard.
++class AdStatCard extends StatelessWidget {
++  final String icon;
++  final String label;
++  final String value;
++  final Color color;
++  const AdStatCard({super.key, required this.icon, required this.label, required this.value, required this.color});
++
++  @override
++  Widget build(BuildContext context) {
++    return AdCard(
++      child: Column(
++        crossAxisAlignment: CrossAxisAlignment.start,
++        children: [
++          Container(
++            width: 40, height: 40,
++            decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(11)),
++            alignment: Alignment.center,
++            child: Text(icon, style: const TextStyle(fontSize: 18)),
++          ),
++          const SizedBox(height: 12),
++          Text(value, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 22, color: NexaColors.navy)),
++          const SizedBox(height: 2),
++          Text(label, style: const TextStyle(fontSize: 11, color: NexaColors.txt3)),
++        ],
++      ),
++    );
++  }
++}
++
++/// A circular initial-letter avatar matching the mockup's Av component.
++class AdAvatar extends StatelessWidget {
++  final String name;
++  final Color color;
++  final double size;
++  const AdAvatar({super.key, required this.name, this.color = NexaColors.blue, this.size = 34});
++
++  @override
++  Widget build(BuildContext context) {
++    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
++    return Container(
++      width: size, height: size,
++      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
++      alignment: Alignment.center,
++      child: Text(initial, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: size * 0.4)),
++    );
++  }
++}
++
++const List<Color> avatarPalette = [
++  NexaColors.blue, Color(0xFFDB2777), Color(0xFF059669), Color(0xFFD97706),
++  NexaColors.gold, Color(0xFF0891B2), NexaColors.purple, Color(0xFFC2410C),
++];
++
++Color avatarColorFor(int index) => avatarPalette[index % avatarPalette.length];
++
++/// Bottom-sheet style modal matching the mockup's Modal component (mobile
++/// equivalent of a centered dialog).
++Future<T?> showAdModal<T>(BuildContext context, {required String title, required Widget child}) {
++  return showModalBottomSheet<T>(
++    context: context,
++    isScrollControlled: true,
++    backgroundColor: Colors.transparent,
++    builder: (ctx) => Padding(
++      padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
++      child: Container(
++        constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.88),
++        decoration: const BoxDecoration(
++          color: Colors.white,
++          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
++        ),
++        child: Column(
++          mainAxisSize: MainAxisSize.min,
++          children: [
++            const SizedBox(height: 10),
++            Container(width: 36, height: 4, decoration: BoxDecoration(color: NexaColors.border, borderRadius: BorderRadius.circular(4))),
++            Padding(
++              padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
++              child: Row(
++                mainAxisAlignment: MainAxisAlignment.spaceBetween,
++                children: [
++                  Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: NexaColors.navy)),
++                  IconButton(icon: const Icon(Icons.close, size: 20), onPressed: () => Navigator.of(ctx).pop()),
++                ],
++              ),
++            ),
++            Flexible(
++              child: SingleChildScrollView(
++                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
++                child: child,
++              ),
++            ),
++          ],
++        ),
++      ),
++    ),
++  );
++}
++
++/// A labeled text field matching the mockup's INP inputs.
++class AdField extends StatelessWidget {
++  final String label;
++  final TextEditingController? controller;
++  final String? initialValue;
++  final TextInputType? keyboardType;
++  final bool obscure;
++  final int maxLines;
++  const AdField({
++    super.key,
++    required this.label,
++    this.controller,
++    this.initialValue,
++    this.keyboardType,
++    this.obscure = false,
++    this.maxLines = 1,
++  });
++
++  @override
++  Widget build(BuildContext context) {
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.start,
++      children: [
++        Text(label.toUpperCase(),
++            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: NexaColors.txt3, letterSpacing: 0.6)),
++        const SizedBox(height: 6),
++        TextFormField(
++          controller: controller,
++          initialValue: controller == null ? initialValue : null,
++          keyboardType: keyboardType,
++          obscureText: obscure,
++          maxLines: maxLines,
++          style: const TextStyle(fontSize: 13),
++          decoration: InputDecoration(
++            filled: true,
++            fillColor: NexaColors.bg,
++            contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
++            border: OutlineInputBorder(borderRadius: BorderRadius.circular(9), borderSide: BorderSide(color: NexaColors.border)),
++            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(9), borderSide: BorderSide(color: NexaColors.border)),
++            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(9), borderSide: const BorderSide(color: NexaColors.blue)),
++          ),
++        ),
++        const SizedBox(height: 12),
++      ],
++    );
++  }
++}
++
++/// A labeled dropdown matching the mockup's select inputs.
++class AdDropdown extends StatelessWidget {
++  final String label;
++  final String value;
++  final List<String> options;
++  final ValueChanged<String?> onChanged;
++  const AdDropdown({super.key, required this.label, required this.value, required this.options, required this.onChanged});
++
++  @override
++  Widget build(BuildContext context) {
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.start,
++      children: [
++        Text(label.toUpperCase(),
++            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: NexaColors.txt3, letterSpacing: 0.6)),
++        const SizedBox(height: 6),
++        Container(
++          padding: const EdgeInsets.symmetric(horizontal: 13),
++          decoration: BoxDecoration(
++            color: NexaColors.bg,
++            borderRadius: BorderRadius.circular(9),
++            border: Border.all(color: NexaColors.border),
++          ),
++          child: DropdownButtonHideUnderline(
++            child: DropdownButton<String>(
++              value: value,
++              isExpanded: true,
++              items: options.map((o) => DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(fontSize: 13)))).toList(),
++              onChanged: onChanged,
++            ),
++          ),
++        ),
++        const SizedBox(height: 12),
++      ],
++    );
++  }
++}
++
++/// Simple vertical bar chart matching the mockup's MiniBarChart/daily activity chart.
++class AdBarChart extends StatelessWidget {
++  final List<MapEntry<String, num>> data;
++  final Color color;
++  final double height;
++  const AdBarChart({super.key, required this.data, this.color = NexaColors.blue, this.height = 100});
++
++  @override
++  Widget build(BuildContext context) {
++    if (data.isEmpty) return SizedBox(height: height, child: const Center(child: Text('Aucune donnée', style: TextStyle(color: NexaColors.txt3, fontSize: 12))));
++    final maxV = data.map((e) => e.value).fold<num>(0, (a, b) => a > b ? a : b);
++    return SizedBox(
++      height: height,
++      child: Row(
++        crossAxisAlignment: CrossAxisAlignment.end,
++        children: data.map((d) {
++          final pct = maxV == 0 ? 0.0 : d.value / maxV;
++          return Expanded(
++            child: Padding(
++              padding: const EdgeInsets.symmetric(horizontal: 3),
++              child: Column(
++                mainAxisAlignment: MainAxisAlignment.end,
++                children: [
++                  Text('${d.value}', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: color)),
++                  const SizedBox(height: 4),
++                  Container(
++                    height: (height - 34) * pct,
++                    decoration: BoxDecoration(color: color.withOpacity(0.85), borderRadius: const BorderRadius.vertical(top: Radius.circular(4))),
++                  ),
++                  const SizedBox(height: 4),
++                  Text(d.key, style: const TextStyle(fontSize: 9, color: NexaColors.txt3)),
++                ],
++              ),
++            ),
++          );
++        }).toList(),
++      ),
++    );
++  }
++}
++
++/// Simple donut chart matching the mockup's DonutChart (filiere distribution).
++class AdDonutChart extends StatelessWidget {
++  final List<MapEntry<String, num>> segments;
++  final List<Color> colors;
++  final double size;
++  const AdDonutChart({super.key, required this.segments, required this.colors, this.size = 100});
++
++  @override
++  Widget build(BuildContext context) {
++    final total = segments.fold<num>(0, (a, b) => a + b.value);
++    return SizedBox(
++      width: size, height: size,
++      child: CustomPaint(
++        painter: _DonutPainter(segments: segments, colors: colors, total: total),
++        child: Center(
++          child: Column(
++            mainAxisSize: MainAxisSize.min,
++            children: [
++              Text('$total', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: NexaColors.navy)),
++              const Text('étudiants', style: TextStyle(fontSize: 8, color: NexaColors.txt3)),
++            ],
++          ),
++        ),
++      ),
++    );
++  }
++}
++
++class _DonutPainter extends CustomPainter {
++  final List<MapEntry<String, num>> segments;
++  final List<Color> colors;
++  final num total;
++  _DonutPainter({required this.segments, required this.colors, required this.total});
++
++  @override
++  void paint(Canvas canvas, Size size) {
++    final rect = Rect.fromLTWH(6, 6, size.width - 12, size.height - 12);
++    final strokeWidth = size.width * 0.12;
++    final bgPaint = Paint()..color = const Color(0xFFEEF3FF)..style = PaintingStyle.stroke..strokeWidth = strokeWidth;
++    canvas.drawArc(rect, 0, 6.28319, false, bgPaint);
++
++    if (total == 0) return;
++    double startAngle = -1.5708; // -90deg
++    for (var i = 0; i < segments.length; i++) {
++      final sweep = (segments[i].value / total) * 6.28319;
++      final paint = Paint()
++        ..color = colors[i % colors.length]
++        ..style = PaintingStyle.stroke
++        ..strokeWidth = strokeWidth
++        ..strokeCap = StrokeCap.round;
++      canvas.drawArc(rect, startAngle, sweep * 0.96, false, paint);
++      startAngle += sweep;
++    }
++  }
++
++  @override
++  bool shouldRepaint(covariant _DonutPainter oldDelegate) => true;
++}
++
++void showAdSnack(BuildContext context, String message, {bool error = false}) {
++  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
++    content: Text(message),
++    backgroundColor: error ? NexaColors.red : NexaColors.navy,
++    behavior: SnackBarBehavior.floating,
++    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
++  ));
++}
+diff --git a/lib/main.dart b/lib/main.dart
+index 92c19f5..a32707b 100644
+--- a/lib/main.dart
++++ b/lib/main.dart
+@@ -7,6 +7,7 @@ import 'features/exercises/presentation/exercises_screen.dart';
+ import 'features/leaderboard/presentation/leaderboard_screen.dart';
+ import 'features/forum/presentation/forum_screen.dart';
+ import 'features/contests/presentation/concours_screen.dart';
++import 'features/admin/presentation/admin_shell.dart';
+ 
+ void main() async {
+   WidgetsFlutterBinding.ensureInitialized();
+@@ -37,6 +38,8 @@ class AppShell extends StatefulWidget {
+ 
+ class _AppShellState extends State<AppShell> {
+   bool _isLoggedIn = false;
++  bool _isAdmin = false;
++  bool _checkingRole = false;
+   int _currentTab = 0;
+   int? _xpToast;
+ 
+@@ -48,16 +51,36 @@ class _AppShellState extends State<AppShell> {
+ 
+   Future<void> _checkAuth() async {
+     final has = await ApiClient.hasToken();
+-    setState(() => _isLoggedIn = has);
++    if (!has) {
++      setState(() => _isLoggedIn = false);
++      return;
++    }
++    await _resolveRole();
++    setState(() => _isLoggedIn = true);
++  }
++
++  Future<void> _resolveRole() async {
++    setState(() => _checkingRole = true);
++    try {
++      final profile = await ApiClient.getProfile();
++      setState(() => _isAdmin = profile['role'] == 'ADMIN');
++    } catch (_) {
++      // If the profile fetch fails (e.g. expired/invalid token), fall back
++      // to the student experience rather than blocking the app entirely.
++      setState(() => _isAdmin = false);
++    } finally {
++      setState(() => _checkingRole = false);
++    }
+   }
+ 
+-  void _onLogin() {
++  void _onLogin() async {
++    await _resolveRole();
+     setState(() { _isLoggedIn = true; _currentTab = 0; });
+   }
+ 
+   void _onLogout() async {
+     await ApiClient.clearToken();
+-    setState(() => _isLoggedIn = false);
++    setState(() { _isLoggedIn = false; _isAdmin = false; });
+   }
+ 
+   @override
+@@ -66,6 +89,17 @@ class _AppShellState extends State<AppShell> {
+       return LoginScreen(onLogin: _onLogin);
+     }
+ 
++    if (_checkingRole) {
++      return const Scaffold(
++        backgroundColor: NexaColors.navy,
++        body: Center(child: CircularProgressIndicator(color: Colors.white)),
++      );
++    }
++
++    if (_isAdmin) {
++      return AdminShell(onLogout: _onLogout);
++    }
++
+     final screens = [
+       HomeScreen(
+         onGoExercises: () => setState(() => _currentTab = 1),
+-- 
+2.43.0
+

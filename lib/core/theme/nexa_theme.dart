@@ -19,6 +19,7 @@ class NexaColors {
   static const txt3 = Color(0xFF8FA3C0);
   static const green = Color(0xFF10B981);
   static const red = Color(0xFFEF4444);
+  static const orange = Color(0xFFF97316);
 }
 
 class NexaTheme {

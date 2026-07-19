@@ -7,6 +7,7 @@ import 'features/exercises/presentation/exercises_screen.dart';
 import 'features/leaderboard/presentation/leaderboard_screen.dart';
 import 'features/forum/presentation/forum_screen.dart';
 import 'features/contests/presentation/concours_screen.dart';
+import 'features/admin/presentation/admin_shell.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,6 +38,8 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   bool _isLoggedIn = false;
+  bool _isAdmin = false;
+  bool _checkingRole = false;
   int _currentTab = 0;
   int? _xpToast;
 
@@ -48,22 +51,53 @@ class _AppShellState extends State<AppShell> {
 
   Future<void> _checkAuth() async {
     final has = await ApiClient.hasToken();
-    setState(() => _isLoggedIn = has);
+    if (!has) {
+      setState(() => _isLoggedIn = false);
+      return;
+    }
+    await _resolveRole();
+    setState(() => _isLoggedIn = true);
   }
 
-  void _onLogin() {
+  Future<void> _resolveRole() async {
+    setState(() => _checkingRole = true);
+    try {
+      final profile = await ApiClient.getProfile();
+      setState(() => _isAdmin = profile['role'] == 'ADMIN');
+    } catch (_) {
+      // If the profile fetch fails (e.g. expired/invalid token), fall back
+      // to the student experience rather than blocking the app entirely.
+      setState(() => _isAdmin = false);
+    } finally {
+      setState(() => _checkingRole = false);
+    }
+  }
+
+  void _onLogin() async {
+    await _resolveRole();
     setState(() { _isLoggedIn = true; _currentTab = 0; });
   }
 
   void _onLogout() async {
     await ApiClient.clearToken();
-    setState(() => _isLoggedIn = false);
+    setState(() { _isLoggedIn = false; _isAdmin = false; });
   }
 
   @override
   Widget build(BuildContext context) {
     if (!_isLoggedIn) {
       return LoginScreen(onLogin: _onLogin);
+    }
+
+    if (_checkingRole) {
+      return const Scaffold(
+        backgroundColor: NexaColors.navy,
+        body: Center(child: CircularProgressIndicator(color: Colors.white)),
+      );
+    }
+
+    if (_isAdmin) {
+      return AdminShell(onLogout: _onLogout);
     }
 
     final screens = [
