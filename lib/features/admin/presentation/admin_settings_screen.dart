@@ -11,7 +11,6 @@ class AdminSettingsScreen extends StatefulWidget {
 }
 
 class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
-  Map<String, dynamic>? _settings;
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -46,7 +45,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     try {
       final s = await ApiClient.getAdminSettings();
       setState(() {
-        _settings = s;
         _platformName.text = '${s['platformName'] ?? ''}';
         _supportEmail.text = '${s['supportEmail'] ?? ''}';
         _websiteUrl.text = '${s['websiteUrl'] ?? ''}';
