@@ -120,9 +120,10 @@ class ApiClient {
   }
 
   // LEADERBOARD
-  static Future<List<dynamic>> getLeaderboard({String? filiere}) async {
+  static Future<List<dynamic>> getLeaderboard({String? filiere, String? period}) async {
     final res = await _dio.get('/users/leaderboard', queryParameters: {
       if (filiere != null) 'filiere': filiere,
+      if (period != null) 'period': period,
     });
     return res.data;
   }
@@ -153,123 +154,44 @@ static Future<Map<String, dynamic>> submitContestAnswer(
   return res.data;
 }
 
-  // ── ADMIN: DASHBOARD ──────────────────────────────────────────────────
-  static Future<Map<String, dynamic>> getAdminDashboard() async {
-    final res = await _dio.get('/admin/dashboard');
-    return res.data;
-  }
-
-  // ── ADMIN: USERS ──────────────────────────────────────────────────────
-  static Future<List<dynamic>> getAdminUsers(
-      {String? search, String? status, String? ecole}) async {
-    final res = await _dio.get('/admin/users', queryParameters: {
-      if (search != null && search.isNotEmpty) 'search': search,
-      if (status != null) 'status': status,
-      if (ecole != null) 'ecole': ecole,
+  // FORUM
+  static Future<List<dynamic>> getForumPosts({String? matiere}) async {
+    final res = await _dio.get('/forum', queryParameters: {
+      if (matiere != null) 'matiere': matiere,
     });
     return res.data;
   }
 
-  static Future<Map<String, dynamic>> getAdminUserDetail(String id) async {
-    final res = await _dio.get('/admin/users/$id');
+  static Future<Map<String, dynamic>> getForumPost(String id) async {
+    final res = await _dio.get('/forum/$id');
     return res.data;
   }
 
-  static Future<Map<String, dynamic>> updateAdminUser(
-      String id, Map<String, dynamic> data) async {
-    final res = await _dio.put('/admin/users/$id', data: data);
+  static Future<Map<String, dynamic>> createForumPost({
+    required String titre,
+    required String contenu,
+    required String matiere,
+  }) async {
+    final res = await _dio.post('/forum', data: {
+      'titre': titre,
+      'contenu': contenu,
+      'matiere': matiere,
+    });
     return res.data;
   }
 
-  static Future<Map<String, dynamic>> updateUserStatus(
-      String id, String status) async {
-    final res =
-        await _dio.patch('/admin/users/$id/status', data: {'status': status});
+  static Future<Map<String, dynamic>> createForumReply(String postId, String contenu) async {
+    final res = await _dio.post('/forum/$postId/replies', data: {'contenu': contenu});
     return res.data;
   }
 
-  static Future<Map<String, dynamic>> updateUserRole(
-      String id, String role) async {
-    final res =
-        await _dio.patch('/admin/users/$id/role', data: {'role': role});
-    return res.data;
+  // Toggles like/unlike in one call — the backend returns the new state.
+  static Future<bool> toggleForumLike(String postId) async {
+    final res = await _dio.post('/forum/$postId/like');
+    return res.data['liked'] as bool;
   }
 
-  // ── ADMIN: CONTENT (exercises + contests) ───────────────────────────────
-  static Future<List<dynamic>> getAdminExercises() async {
-    final res = await _dio.get('/admin/content/exercises');
-    return res.data;
-  }
-
-  static Future<Map<String, dynamic>> createExercise(
-      Map<String, dynamic> data) async {
-    final res = await _dio.post('/exercises', data: data);
-    return res.data;
-  }
-
-  static Future<Map<String, dynamic>> updateAdminExercise(
-      String id, Map<String, dynamic> data) async {
-    final res = await _dio.put('/admin/content/exercises/$id', data: data);
-    return res.data;
-  }
-
-  static Future<void> deleteAdminExercise(String id) async {
-    await _dio.delete('/admin/content/exercises/$id');
-  }
-
-  static Future<List<dynamic>> getAdminContests() async {
-    final res = await _dio.get('/admin/content/contests');
-    return res.data;
-  }
-
-  static Future<Map<String, dynamic>> updateAdminContest(
-      String id, Map<String, dynamic> data) async {
-    final res = await _dio.put('/admin/content/contests/$id', data: data);
-    return res.data;
-  }
-
-  static Future<void> deleteAdminContest(String id) async {
-    await _dio.delete('/admin/content/contests/$id');
-  }
-
-  // ── ADMIN: FORUM MODERATION ─────────────────────────────────────────────
-  static Future<Map<String, dynamic>> getModerationStats() async {
-    final res = await _dio.get('/admin/moderation/stats');
-    return res.data;
-  }
-
-  static Future<List<dynamic>> getReportedPosts() async {
-    final res = await _dio.get('/admin/moderation/reported');
-    return res.data;
-  }
-
-  static Future<List<dynamic>> getAllModeratedPosts() async {
-    final res = await _dio.get('/admin/moderation/posts');
-    return res.data;
-  }
-
-  static Future<Map<String, dynamic>> updatePostStatus(
-      String id, String status) async {
-    final res = await _dio.patch('/admin/moderation/posts/$id/status',
-        data: {'status': status});
-    return res.data;
-  }
-
-  // ── ADMIN: SETTINGS ──────────────────────────────────────────────────────
-  static Future<Map<String, dynamic>> getAdminSettings() async {
-    final res = await _dio.get('/admin/settings');
-    return res.data;
-  }
-
-  static Future<Map<String, dynamic>> updateAdminSettings(
-      Map<String, dynamic> data) async {
-    final res = await _dio.put('/admin/settings', data: data);
-    return res.data;
-  }
-
-  static Future<Map<String, dynamic>> updateMaintenanceMode(bool on) async {
-    final res = await _dio
-        .patch('/admin/settings/maintenance', data: {'maintenanceMode': on});
-    return res.data;
+  static Future<void> reportForumPost(String postId) async {
+    await _dio.patch('/forum/$postId/report');
   }
 }

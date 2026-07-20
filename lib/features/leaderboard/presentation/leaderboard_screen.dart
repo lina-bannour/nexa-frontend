@@ -14,8 +14,14 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   List<dynamic> _users = [];
   bool _loading = true;
   String? _selectedFiliere;
+  String _period = 'global';
 
   final List<String> _filieres = ['MP', 'PC', 'TSI', 'BIO', 'TECHNO'];
+  final List<Map<String, String>> _periods = const [
+    {'value': 'global', 'label': 'Tout temps'},
+    {'value': 'semaine', 'label': 'Cette semaine'},
+    {'value': 'mois', 'label': 'Ce mois'},
+  ];
 
   @override
   void initState() {
@@ -26,7 +32,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final users = await ApiClient.getLeaderboard(filiere: _selectedFiliere);
+      final users = await ApiClient.getLeaderboard(filiere: _selectedFiliere, period: _period);
       setState(() => _users = users);
     } catch (e) {
       setState(() => _users = []);
@@ -76,6 +82,15 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 )),
               ]),
             ),
+            const SizedBox(height: 8),
+            // Period filter
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(children: _periods.asMap().entries.map((e) => Padding(
+                padding: EdgeInsets.only(left: e.key == 0 ? 0 : 6),
+                child: _periodChip(e.value['label']!, e.value['value']!),
+              )).toList()),
+            ),
           ]),
         ),
 
@@ -115,6 +130,26 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           style: TextStyle(
             fontSize: 12, fontWeight: FontWeight.w700,
             color: active ? Colors.white : Colors.white60,
+          )),
+      ),
+    );
+  }
+
+  Widget _periodChip(String label, String value) {
+    final active = _period == value;
+    return GestureDetector(
+      onTap: () { setState(() => _period = value); _load(); },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        decoration: BoxDecoration(
+          color: active ? NexaColors.gold : Colors.white.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: active ? NexaColors.gold : Colors.white.withOpacity(0.15)),
+        ),
+        child: Text(label,
+          style: TextStyle(
+            fontSize: 11, fontWeight: FontWeight.w600,
+            color: active ? NexaColors.navy : Colors.white54,
           )),
       ),
     );
