@@ -86,7 +86,7 @@ class _AdminForumScreenState extends State<AdminForumScreen> {
             mainAxisSpacing: 10, crossAxisSpacing: 10,
             childAspectRatio: 1.7,
             children: [
-              _statTile('💬', '${_stats?['totalPosts'] ?? _posts.length}', 'Total posts', NexaColors.blue),
+              _statTile('💬', '${_stats?['total'] ?? _posts.length}', 'Total posts', NexaColors.blue),
               _statTile('✅', '${_stats?['published'] ?? _posts.where((p) => p['status'] == 'PUBLISHED').length}', 'Publiés', NexaColors.green),
               _statTile('🚩', '${_stats?['reported'] ?? reportedCount}', 'Signalés', NexaColors.red),
               _statTile('❤️', '${_stats?['totalLikes'] ?? '—'}', 'Total likes', NexaColors.gold),
