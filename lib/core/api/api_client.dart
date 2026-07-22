@@ -263,6 +263,11 @@ static Future<Map<String, dynamic>> submitContestAnswer(
     await _dio.delete('/admin/content/contests/$id');
   }
 
+  static Future<Map<String, dynamic>> createContest(Map<String, dynamic> data) async {
+    final res = await _dio.post('/contests', data: data);
+    return res.data;
+  }
+
   static Future<Map<String, dynamic>> getModerationStats() async {
     final res = await _dio.get('/admin/moderation/stats');
     return res.data;

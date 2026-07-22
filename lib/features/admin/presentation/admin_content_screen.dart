@@ -90,7 +90,9 @@ class _AdminContentScreenState extends State<AdminContentScreen> {
                 ]),
               ),
               if (_view == 'exercices')
-                AdBtn(label: 'Ajouter', icon: Icons.add, small: true, onPressed: _openCreateExercise),
+                AdBtn(label: 'Ajouter', icon: Icons.add, small: true, onPressed: _openCreateExercise)
+              else if (_view == 'concours')
+                AdBtn(label: 'Ajouter', icon: Icons.add, small: true, onPressed: _openCreateContest),
             ],
           ),
           const SizedBox(height: 16),
@@ -247,6 +249,12 @@ class _AdminContentScreenState extends State<AdminContentScreen> {
   void _openEditContest(dynamic c) {
     showAdModal(context, title: 'Modifier le concours', child: _ContestFormContent(
       contest: c,
+      onSaved: () { Navigator.of(context).pop(); _load(); },
+    ));
+  }
+
+  void _openCreateContest() {
+    showAdModal(context, title: 'Nouveau concours', child: _CreateContestFormContent(
       onSaved: () { Navigator.of(context).pop(); _load(); },
     ));
   }
@@ -444,5 +452,258 @@ class _ContestFormContentState extends State<_ContestFormContent> {
         AdBtn(label: 'Enregistrer', full: true, loading: _saving, onPressed: _save),
       ],
     );
+  }
+}
+
+class _CreateContestFormContent extends StatefulWidget {
+  final VoidCallback onSaved;
+  const _CreateContestFormContent({required this.onSaved});
+
+  @override
+  State<_CreateContestFormContent> createState() => _CreateContestFormContentState();
+}
+
+class _CreateContestFormContentState extends State<_CreateContestFormContent> {
+  final _titre = TextEditingController();
+  final _annee = TextEditingController(text: '${DateTime.now().year}');
+  String _filiere = 'MP';
+  String _matiere = 'MATHEMATIQUES';
+  bool _saving = false;
+
+  final List<_ContestQuestionInput> _questions = [];
+
+  void _addQuestion() {
+    setState(() {
+      _questions.add(_ContestQuestionInput(
+        enonceController: TextEditingController(),
+        solutionController: TextEditingController(),
+        xpController: TextEditingController(text: '10'),
+        hint1Controller: TextEditingController(),
+        hint2Controller: TextEditingController(),
+        choiceControllers: [
+          TextEditingController(),
+          TextEditingController(),
+          TextEditingController(),
+          TextEditingController(),
+        ],
+        correctIndex: 0,
+      ));
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _addQuestion();
+  }
+
+  @override
+  void dispose() {
+    _titre.dispose();
+    _annee.dispose();
+    for (var q in _questions) {
+      q.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final titleText = _titre.text.trim();
+    final yearVal = int.tryParse(_annee.text) ?? DateTime.now().year;
+
+    if (titleText.isEmpty) {
+      showAdSnack(context, 'Le titre est requis', error: true);
+      return;
+    }
+
+    if (_questions.isEmpty) {
+      showAdSnack(context, 'Ajoutez au moins une question', error: true);
+      return;
+    }
+
+    final List<Map<String, dynamic>> questionDataList = [];
+    for (int i = 0; i < _questions.length; i++) {
+      final q = _questions[i];
+      final enonce = q.enonceController.text.trim();
+      final solution = q.solutionController.text.trim();
+      final xpBase = int.tryParse(q.xpController.text) ?? 10;
+
+      if (enonce.isEmpty || solution.isEmpty) {
+        showAdSnack(context, 'Veuillez remplir l\'énoncé et la solution de la question ${i + 1}', error: true);
+        return;
+      }
+
+      final choices = q.choiceControllers.asMap().entries
+          .where((e) => e.value.text.trim().isNotEmpty)
+          .map((e) => {'label': e.value.text.trim(), 'isCorrect': e.key == q.correctIndex})
+          .toList();
+
+      if (choices.length < 2) {
+        showAdSnack(context, 'La question ${i + 1} doit avoir au moins 2 choix', error: true);
+        return;
+      }
+
+      questionDataList.add({
+        'ordre': i + 1,
+        'enonce': enonce,
+        'solutionDetaillee': solution,
+        'xpBase': xpBase,
+        if (q.hint1Controller.text.trim().isNotEmpty) 'hint1': q.hint1Controller.text.trim(),
+        if (q.hint2Controller.text.trim().isNotEmpty) 'hint2': q.hint2Controller.text.trim(),
+        'choix': choices,
+      });
+    }
+
+    setState(() => _saving = true);
+
+    try {
+      await ApiClient.createContest({
+        'titre': titleText,
+        'annee': yearVal,
+        'filiere': _filiere,
+        'matiere': _matiere,
+        'questions': questionDataList,
+      });
+      if (mounted) showAdSnack(context, 'Concours créé avec succès');
+      widget.onSaved();
+    } catch (e) {
+      if (mounted) {
+        showAdSnack(context, 'Échec de la création du concours', error: true);
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AdField(label: 'Titre du Concours', controller: _titre),
+        AdField(label: 'Année', controller: _annee, keyboardType: TextInputType.number),
+        AdDropdown(label: 'Filière', value: _filiere, options: const ['MP', 'PC', 'TSI', 'BIO', 'TECHNO'], onChanged: (v) => setState(() => _filiere = v!)),
+        AdDropdown(label: 'Matière', value: _matiere, options: const ['MATHEMATIQUES', 'PHYSIQUE', 'SCIENCES_INGENIEUR', 'AUTRE'], onChanged: (v) => setState(() => _matiere = v!)),
+        
+        const SizedBox(height: 16),
+        const Text(
+          'QUESTIONS',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: NexaColors.navy),
+        ),
+        const SizedBox(height: 8),
+
+        ..._questions.asMap().entries.map((entry) {
+          final idx = entry.key;
+          final q = entry.value;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: NexaColors.blueLight.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: NexaColors.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Question ${idx + 1}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    if (_questions.length > 1)
+                      IconButton(
+                        icon: const Icon(Icons.delete, color: NexaColors.red, size: 20),
+                        onPressed: () => setState(() => _questions.removeAt(idx)),
+                      )
+                  ],
+                ),
+                AdField(label: 'Énoncé de la question', controller: q.enonceController),
+                AdField(label: 'Solution détaillée', controller: q.solutionController),
+                AdField(label: 'XP Base', controller: q.xpController, keyboardType: TextInputType.number),
+                AdField(label: 'Indice 1 (optionnel)', controller: q.hint1Controller),
+                AdField(label: 'Indice 2 (optionnel)', controller: q.hint2Controller),
+                const SizedBox(height: 8),
+                const Text('Choix (cochez le correct) :', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                ...q.choiceControllers.asMap().entries.map((choiceEntry) {
+                  final cIdx = choiceEntry.key;
+                  final cCtrl = choiceEntry.value;
+                  return Row(
+                    children: [
+                      Radio<int>(
+                        value: cIdx,
+                        groupValue: q.correctIndex,
+                        onChanged: (val) => setState(() => q.correctIndex = val!),
+                        activeColor: NexaColors.green,
+                      ),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: TextField(
+                            controller: cCtrl,
+                            decoration: InputDecoration(
+                              hintText: 'Choix ${cIdx + 1}',
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                              filled: true,
+                              fillColor: Colors.white,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
+                        ),
+                      )
+                    ],
+                  );
+                }),
+              ],
+            ),
+          );
+        }),
+
+        AdBtn(
+          label: 'Ajouter une question',
+          icon: Icons.add,
+          variant: AdBtnVariant.secondary,
+          onPressed: _addQuestion,
+          full: true,
+        ),
+        const SizedBox(height: 16),
+        AdBtn(
+          label: 'Créer le concours',
+          full: true,
+          loading: _saving,
+          onPressed: _save,
+        ),
+      ],
+    );
+  }
+}
+
+class _ContestQuestionInput {
+  final TextEditingController enonceController;
+  final TextEditingController solutionController;
+  final TextEditingController xpController;
+  final TextEditingController hint1Controller;
+  final TextEditingController hint2Controller;
+  final List<TextEditingController> choiceControllers;
+  int correctIndex;
+
+  _ContestQuestionInput({
+    required this.enonceController,
+    required this.solutionController,
+    required this.xpController,
+    required this.hint1Controller,
+    required this.hint2Controller,
+    required this.choiceControllers,
+    required this.correctIndex,
+  });
+
+  void dispose() {
+    enonceController.dispose();
+    solutionController.dispose();
+    xpController.dispose();
+    hint1Controller.dispose();
+    hint2Controller.dispose();
+    for (var c in choiceControllers) {
+      c.dispose();
+    }
   }
 }

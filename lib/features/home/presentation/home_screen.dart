@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/nexa_theme.dart';
 import '../../../widgets/shared_widgets.dart';
+import '../../forum/presentation/forum_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback onGoExercises;
@@ -153,7 +154,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ]),
             const SizedBox(height: 8),
             Row(children: [
-              Expanded(child: _actionBtn('💬', 'Forum', const Color(0xFFDB2777), () {})),
+              Expanded(child: _actionBtn('💬', 'Forum', const Color(0xFFDB2777), () {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => const Scaffold(
+                    body: SafeArea(child: ForumScreen()),
+                  ),
+                ));
+              })),
               const SizedBox(width: 8),
               Expanded(child: _actionBtn('🤖', 'IA NEXA', NexaColors.purple, () {})),
             ]),

@@ -5,9 +5,9 @@ import 'features/auth/presentation/login_screen.dart';
 import 'features/home/presentation/home_screen.dart';
 import 'features/exercises/presentation/exercises_screen.dart';
 import 'features/leaderboard/presentation/leaderboard_screen.dart';
-import 'features/forum/presentation/forum_screen.dart';
 import 'features/contests/presentation/concours_screen.dart';
 import 'features/admin/presentation/admin_shell.dart';
+import 'features/home/presentation/profile_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -108,7 +108,7 @@ class _AppShellState extends State<AppShell> {
       const ExercisesScreen(),
       const ConcoursScreen(),      
       const LeaderboardScreen(),
-      _MenuScreen(onLogout: _onLogout),
+      ProfileScreen(onLogout: _onLogout),
     ];
 
     return Scaffold(
@@ -143,7 +143,7 @@ class _AppShellState extends State<AppShell> {
               _navItem(1, '📚', 'Exercices'),
               _navItem(2, '🏁', 'Concours'),
               _navItem(3, '🏆', 'Classement'),
-              _navItem(4, '⋯', 'Plus'),
+              _navItem(4, '👤', 'Profil'),
             ]),
           ),
         ),
@@ -182,27 +182,4 @@ class _AppShellState extends State<AppShell> {
     );
   }
 }
-
-class _MenuScreen extends StatelessWidget {
-  final VoidCallback onLogout;
-  const _MenuScreen({required this.onLogout});
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(children: [
-        const SizedBox(height: 20),
-        const Text('Plus', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 22, color: NexaColors.txt)),
-        const SizedBox(height: 30),
-        ListTile(
-          leading: const Icon(Icons.logout, color: NexaColors.red),
-          title: const Text('Se déconnecter', style: TextStyle(color: NexaColors.red, fontWeight: FontWeight.w600)),
-          onTap: onLogout,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          tileColor: const Color(0xFFFEF2F2),
-        ),
-      ]),
-    );
-  }
-}
+
