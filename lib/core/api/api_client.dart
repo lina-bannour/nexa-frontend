@@ -127,6 +127,14 @@ class ApiClient {
     });
     return res.data;
   }
+
+  static Future<Map<String, dynamic>> getMyRank({String? filiere, String? period}) async {
+    final res = await _dio.get('/users/me/rank', queryParameters: {
+      if (filiere != null) 'filiere': filiere,
+      if (period != null) 'period': period,
+    });
+    return res.data;
+  }
   // CONTESTS
 static Future<List<dynamic>> getContests({String? filiere}) async {
   final res = await _dio.get('/contests', queryParameters: {

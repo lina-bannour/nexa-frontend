@@ -12,6 +12,7 @@ class LeaderboardScreen extends StatefulWidget {
 
 class _LeaderboardScreenState extends State<LeaderboardScreen> {
   List<dynamic> _users = [];
+  Map<String, dynamic>? _myRank;
   bool _loading = true;
   String? _selectedFiliere;
   String _period = 'global';
@@ -36,6 +37,15 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       setState(() => _users = users);
     } catch (e) {
       setState(() => _users = []);
+    }
+    // Rang personnel — indépendant de la liste affichée (celle-ci est limitée
+    // aux ~50 premiers), donc on l'interroge séparément pour marcher même si
+    // l'étudiant n'est pas dans le top affiché.
+    try {
+      final rank = await ApiClient.getMyRank(filiere: _selectedFiliere, period: _period);
+      setState(() => _myRank = rank);
+    } catch (e) {
+      setState(() => _myRank = null);
     } finally {
       setState(() => _loading = false);
     }
@@ -94,6 +104,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           ]),
         ),
 
+        if (_myRank != null) _buildMyRankCard(),
+
         Expanded(
           child: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -112,6 +124,44 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 ),
         ),
       ],
+    );
+  }
+
+  Widget _buildMyRankCard() {
+    final rank = _myRank?['rank'] as int?;
+    final xpTotal = _myRank?['xpTotal'] ?? 0;
+    final myId = ApiClient.cachedProfile?['id'];
+    final inVisibleList = myId != null && _users.any((u) => u['id'] == myId);
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [NexaColors.blue, NexaColors.purple]),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(children: [
+        Container(
+          width: 36, height: 36,
+          decoration: const BoxDecoration(color: Colors.white24, shape: BoxShape.circle),
+          child: const Center(child: Text('🎯', style: TextStyle(fontSize: 16))),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(
+              rank != null ? 'Votre rang : #$rank' : "Pas encore classé",
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+            ),
+            Text(
+              rank != null
+                  ? '$xpTotal XP${inVisibleList ? " · dans la liste ci-dessous" : ""}'
+                  : 'Résolvez des exercices pour apparaître au classement',
+              style: const TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+          ]),
+        ),
+      ]),
     );
   }
 
@@ -206,9 +256,11 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   Widget _buildRow(int index, dynamic user) {
     final rank = index + 1;
     final name = '${user['prenom'] ?? ''} ${user['nom'] ?? ''}';
+    final isMe = user['id'] != null && user['id'] == ApiClient.cachedProfile?['id'];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
+        color: isMe ? NexaColors.blueLight : null,
         border: Border(bottom: BorderSide(color: NexaColors.border.withOpacity(0.5))),
       ),
       child: Row(children: [
@@ -231,9 +283,15 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         NexaAvatar(name: name, color: _avatarColor(index), size: 30),
         const SizedBox(width: 10),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(name,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: NexaColors.txt),
-            overflow: TextOverflow.ellipsis),
+          Row(children: [
+            Flexible(
+              child: Text(isMe ? '$name (vous)' : name,
+                style: TextStyle(
+                  fontWeight: isMe ? FontWeight.w800 : FontWeight.w600,
+                  fontSize: 13, color: NexaColors.txt),
+                overflow: TextOverflow.ellipsis),
+            ),
+          ]),
           Text(user['filiere'] ?? '',
             style: const TextStyle(color: NexaColors.txt3, fontSize: 11)),
         ])),

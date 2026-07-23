@@ -15,7 +15,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   Map<String, dynamic>? _profile;
-  int _rank = 1;
+  int? _rank;
   bool _loading = true;
 
   @override
@@ -28,19 +28,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _loading = true);
     try {
       final p = await ApiClient.getProfile();
-      int userRank = 1;
+      int? rank;
       try {
-        final leaderboard = await ApiClient.getLeaderboard(period: 'global');
-        for (int i = 0; i < leaderboard.length; i++) {
-          if (leaderboard[i]['id'] == p['id']) {
-            userRank = i + 1;
-            break;
-          }
-        }
-      } catch (_) {}
+        final rankData = await ApiClient.getMyRank(period: 'global');
+        rank = rankData['rank'] as int?; // null = pas encore classé
+      } catch (_) {
+        // Le rang est une info secondaire — son échec ne doit pas empêcher
+        // d'afficher le reste du profil.
+      }
       setState(() {
         _profile = p;
-        _rank = userRank;
+        _rank = rank;
         _loading = false;
       });
     } catch (e) {
@@ -159,7 +157,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             // Statistics Section
             Row(
               children: [
-                _buildStatCard('🏆', '#$_rank', 'Rang National', NexaColors.gold),
+                _buildStatCard('🏆', _rank != null ? '#$_rank' : '—', 'Rang National', NexaColors.gold),
                 const SizedBox(width: 12),
                 _buildStatCard('📝', '$attempts', 'Résolus', NexaColors.purple),
                 const SizedBox(width: 12),
