@@ -209,13 +209,41 @@ static Future<Map<String, dynamic>> submitContestAnswer(
     return res.data;
   }
 
-  static Future<List<dynamic>> getAdminUsers({String? search, String? status, String? ecole}) async {
+  // Returns { data: [...], pagination: { page, pageSize, total, totalPages } }.
+  // Kept as a Map (not just the list) so callers can drive infinite scroll.
+  static Future<Map<String, dynamic>> getAdminUsersPage({
+    String? search,
+    String? status,
+    String? ecole,
+    String? filiere,
+    int page = 1,
+    int pageSize = 20,
+  }) async {
     final res = await _dio.get('/admin/users', queryParameters: {
       if (search != null && search.isNotEmpty) 'search': search,
       if (status != null) 'status': status,
       if (ecole != null && ecole.isNotEmpty) 'ecole': ecole,
+      if (filiere != null) 'filiere': filiere,
+      'page': page,
+      'pageSize': pageSize,
     });
-    return res.data;
+    final data = res.data;
+    if (data is Map<String, dynamic> && data['data'] is List) {
+      return data;
+    }
+    // Fallback in case an older/unpaginated backend is still deployed.
+    final list = data as List<dynamic>;
+    return {
+      'data': list,
+      'pagination': {'page': 1, 'pageSize': list.length, 'total': list.length, 'totalPages': 1},
+    };
+  }
+
+  // Convenience wrapper for callers that just want the flat list (page 1,
+  // no infinite scroll) — kept for any screen that doesn't need paging.
+  static Future<List<dynamic>> getAdminUsers({String? search, String? status, String? ecole}) async {
+    final page = await getAdminUsersPage(search: search, status: status, ecole: ecole);
+    return page['data'] as List<dynamic>;
   }
 
   static Future<Map<String, dynamic>> getAdminUserDetail(String id) async {

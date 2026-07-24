@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/nexa_theme.dart';
@@ -11,24 +12,74 @@ class AdminStudentsScreen extends StatefulWidget {
 }
 
 class _AdminStudentsScreenState extends State<AdminStudentsScreen> {
+  final _searchController = TextEditingController();
+  final _scrollController = ScrollController();
+  Timer? _debounce;
+
   List<dynamic> _students = [];
   bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
+  int _page = 1;
+  int _total = 0;
   String? _error;
-  String _search = '';
+
   String _filiereFilter = 'Tout';
   String _statusFilter = 'Tout';
+
+  // Global counts per status for the mini stat cards — fetched separately
+  // (pageSize: 1, we only read pagination.total) so they stay accurate
+  // regardless of how many pages have been scrolled into view.
+  int? _actifsTotal;
+  int? _suspendusTotal;
+  int? _bannisTotal;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _load();
   }
 
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchController.dispose();
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_hasMore || _loadingMore || _loading) return;
+    final threshold = _scrollController.position.maxScrollExtent - 300;
+    if (_scrollController.position.pixels >= threshold) {
+      _loadMore();
+    }
+  }
+
+  String? get _search => _searchController.text.trim().isEmpty ? null : _searchController.text.trim();
+  String? get _filiereParam => _filiereFilter == 'Tout' ? null : _filiereFilter;
+  String? get _statusParam => _statusFilter == 'Tout' ? null : _statusFilter;
+
+  void _onSearchChanged(String _) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), _load);
+  }
+
   Future<void> _load() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() { _loading = true; _error = null; _page = 1; _hasMore = true; });
     try {
-      final data = await ApiClient.getAdminUsers();
-      setState(() => _students = data);
+      final result = await ApiClient.getAdminUsersPage(
+        search: _search, status: _statusParam, filiere: _filiereParam, page: 1,
+      );
+      final pagination = result['pagination'] as Map<String, dynamic>;
+      setState(() {
+        _students = result['data'] as List<dynamic>;
+        _total = pagination['total'] ?? _students.length;
+        _hasMore = (pagination['page'] ?? 1) < (pagination['totalPages'] ?? 1);
+      });
+      _loadStatusCounts();
     } catch (_) {
       setState(() => _error = 'Impossible de charger les étudiants.');
     } finally {
@@ -36,18 +87,44 @@ class _AdminStudentsScreenState extends State<AdminStudentsScreen> {
     }
   }
 
-  List<dynamic> get _filtered {
-    return _students.where((s) {
-      if (_filiereFilter != 'Tout' && s['filiere'] != _filiereFilter) return false;
-      if (_statusFilter != 'Tout' && s['status'] != _statusFilter) return false;
-      if (_search.isNotEmpty) {
-        final q = _search.toLowerCase();
-        final name = '${s['prenom'] ?? ''} ${s['nom'] ?? ''}'.toLowerCase();
-        final email = '${s['email'] ?? ''}'.toLowerCase();
-        if (!name.contains(q) && !email.contains(q)) return false;
-      }
-      return true;
-    }).toList();
+  Future<void> _loadMore() async {
+    setState(() => _loadingMore = true);
+    try {
+      final nextPage = _page + 1;
+      final result = await ApiClient.getAdminUsersPage(
+        search: _search, status: _statusParam, filiere: _filiereParam, page: nextPage,
+      );
+      final pagination = result['pagination'] as Map<String, dynamic>;
+      setState(() {
+        _students = [..._students, ...result['data'] as List<dynamic>];
+        _page = nextPage;
+        _hasMore = (pagination['page'] ?? nextPage) < (pagination['totalPages'] ?? nextPage);
+      });
+    } catch (_) {
+      // Silent — a failed "load more" shouldn't disrupt the list already on screen.
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
+    }
+  }
+
+  // Scoped to the current search/filière filter (not the status filter,
+  // since these three tiles ARE the status breakdown).
+  Future<void> _loadStatusCounts() async {
+    try {
+      final results = await Future.wait([
+        ApiClient.getAdminUsersPage(search: _search, filiere: _filiereParam, status: 'ACTIVE', pageSize: 1),
+        ApiClient.getAdminUsersPage(search: _search, filiere: _filiereParam, status: 'SUSPENDED', pageSize: 1),
+        ApiClient.getAdminUsersPage(search: _search, filiere: _filiereParam, status: 'BANNED', pageSize: 1),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _actifsTotal = (results[0]['pagination']?['total'] ?? 0) as int;
+        _suspendusTotal = (results[1]['pagination']?['total'] ?? 0) as int;
+        _bannisTotal = (results[2]['pagination']?['total'] ?? 0) as int;
+      });
+    } catch (_) {
+      // Stat tiles are supplementary — a failure here shouldn't block the list.
+    }
   }
 
   Future<void> _updateStatus(Map<String, dynamic> student, String status) async {
@@ -89,27 +166,29 @@ class _AdminStudentsScreenState extends State<AdminStudentsScreen> {
       );
     }
 
-    final actifs = _students.where((s) => s['status'] == 'ACTIVE').length;
-    final suspendus = _students.where((s) => s['status'] == 'SUSPENDED').length;
-    final bannis = _students.where((s) => s['status'] == 'BANNED').length;
+    final autres = _actifsTotal != null && _suspendusTotal != null && _bannisTotal != null
+        ? (_total - _actifsTotal! - _suspendusTotal! - _bannisTotal!).clamp(0, _total)
+        : null;
 
     return RefreshIndicator(
       onRefresh: _load,
       color: NexaColors.blue,
       child: ListView(
+        controller: _scrollController,
         padding: const EdgeInsets.all(16),
         children: [
-          Text('${_students.length} étudiants inscrits', style: const TextStyle(color: NexaColors.txt3, fontSize: 13)),
+          Text('$_total étudiants inscrits', style: const TextStyle(color: NexaColors.txt3, fontSize: 13)),
           const SizedBox(height: 12),
           Row(children: [
-            Expanded(child: _miniStat('✅', '$actifs', 'Actifs', NexaColors.green)),
+            Expanded(child: _miniStat('✅', _actifsTotal != null ? '$_actifsTotal' : '—', 'Actifs', NexaColors.green)),
             const SizedBox(width: 8),
-            Expanded(child: _miniStat('⏸', '${_students.length - actifs - suspendus - bannis}', 'Autres', NexaColors.txt3)),
+            Expanded(child: _miniStat('⏸', autres != null ? '$autres' : '—', 'Autres', NexaColors.txt3)),
             const SizedBox(width: 8),
-            Expanded(child: _miniStat('🚫', '$suspendus', 'Suspendus', NexaColors.red)),
+            Expanded(child: _miniStat('🚫', _suspendusTotal != null ? '$_suspendusTotal' : '—', 'Suspendus', NexaColors.red)),
           ]),
           const SizedBox(height: 14),
           TextField(
+            controller: _searchController,
             decoration: InputDecoration(
               hintText: 'Rechercher un étudiant...',
               prefixIcon: const Icon(Icons.search, size: 20),
@@ -117,22 +196,28 @@ class _AdminStudentsScreenState extends State<AdminStudentsScreen> {
               contentPadding: const EdgeInsets.symmetric(vertical: 0),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: NexaColors.border)),
             ),
-            onChanged: (v) => setState(() => _search = v),
+            onChanged: _onSearchChanged,
           ),
           const SizedBox(height: 10),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(children: [
-              _filterChip('Filière', _filiereFilter, ['Tout', 'MP', 'PC', 'TSI', 'BIO', 'TECHNO'], (v) => setState(() => _filiereFilter = v)),
+              _filterChip('Filière', _filiereFilter, ['Tout', 'MP', 'PC', 'TSI', 'BIO', 'TECHNO'], (v) { setState(() => _filiereFilter = v); _load(); }),
               const SizedBox(width: 8),
-              _filterChip('Statut', _statusFilter, ['Tout', 'ACTIVE', 'INACTIVE', 'SUSPENDED', 'BANNED'], (v) => setState(() => _statusFilter = v)),
+              _filterChip('Statut', _statusFilter, ['Tout', 'ACTIVE', 'INACTIVE', 'SUSPENDED', 'BANNED'], (v) { setState(() => _statusFilter = v); _load(); }),
             ]),
           ),
           const SizedBox(height: 14),
-          if (_filtered.isEmpty)
+          if (_students.isEmpty)
             const Padding(padding: EdgeInsets.all(24), child: Center(child: Text('Aucun étudiant trouvé', style: TextStyle(color: NexaColors.txt3))))
-          else
-            ..._filtered.asMap().entries.map((e) => _studentRow(e.value, e.key)),
+          else ...[
+            ..._students.asMap().entries.map((e) => _studentRow(e.value, e.key)),
+            if (_loadingMore)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              ),
+          ],
         ],
       ),
     );

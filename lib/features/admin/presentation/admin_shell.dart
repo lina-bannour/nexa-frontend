@@ -122,18 +122,22 @@ class _AdminShellState extends State<AdminShell> {
                   final active = _tab == t.id;
                   return Container(
                     margin: const EdgeInsets.symmetric(vertical: 2),
+                    clipBehavior: Clip.antiAlias,
                     decoration: BoxDecoration(
-                      color: active ? NexaColors.blue.withOpacity(0.22) : Colors.transparent,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: ListTile(
-                      leading: Icon(t.icon, size: 20, color: active ? Colors.white : Colors.white54),
-                      title: Text(t.label, style: TextStyle(color: active ? Colors.white : Colors.white60, fontWeight: active ? FontWeight.w700 : FontWeight.w500, fontSize: 13)),
-                      onTap: () {
-                        setState(() => _tab = t.id);
-                        Navigator.of(context).pop();
-                      },
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    child: Material(
+                      color: active ? NexaColors.blue.withOpacity(0.22) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                      child: ListTile(
+                        leading: Icon(t.icon, size: 20, color: active ? Colors.white : Colors.white54),
+                        title: Text(t.label, style: TextStyle(color: active ? Colors.white : Colors.white60, fontWeight: active ? FontWeight.w700 : FontWeight.w500, fontSize: 13)),
+                        onTap: () {
+                          setState(() => _tab = t.id);
+                          Navigator.of(context).pop();
+                        },
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
                     ),
                   );
                 }).toList(),
