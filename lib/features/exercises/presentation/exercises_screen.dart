@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/nexa_theme.dart';
 import '../../../widgets/shared_widgets.dart';
+import '../../../widgets/latex_text.dart';
 
 class ExercisesScreen extends StatefulWidget {
   const ExercisesScreen({super.key});
@@ -178,6 +179,55 @@ class _ExerciseDetailViewState extends State<ExerciseDetailView> {
   Map<String, dynamic>? _result;
   bool _submitting = false;
 
+  // Free-text "guess before you see the choices" phase — only active when
+  // the exercise has a configured answer. Up to 4 tries; after the 4th
+  // wrong one, falls through to the existing hints + multiple-choice flow
+  // below completely unchanged.
+  late bool _inTextPhase = widget.exercise['hasReponseTexte'] == true;
+  final _textController = TextEditingController();
+  int _textTries = 0;
+  bool _checkingText = false;
+  String? _textFeedback;
+
+  static const _maxTextTries = 4;
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _checkTextAnswer() async {
+    final guess = _textController.text.trim();
+    if (guess.isEmpty || _checkingText) return;
+    setState(() { _checkingText = true; _textFeedback = null; });
+    try {
+      final res = await ApiClient.checkExerciseTextAnswer(widget.exercise['id'], guess);
+      if (res['correct'] == true) {
+        setState(() => _result = {
+          'isCorrect': true,
+          'xpEarned': res['xpEarned'],
+          'solution': res['solution'],
+        });
+        return;
+      }
+      _textTries++;
+      if (_textTries >= _maxTextTries) {
+        // Exhausted — reveal the normal hints + multiple-choice flow.
+        setState(() => _inTextPhase = false);
+      } else {
+        setState(() => _textFeedback = 'Incorrect — essai $_textTries/$_maxTextTries. Réessayez !');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Erreur, réessayez')));
+      }
+    } finally {
+      if (mounted) setState(() => _checkingText = false);
+    }
+  }
+
   List<String> get _hints {
     final ex = widget.exercise;
     return [ex['hint1'], ex['hint2'], ex['hint3'], ex['hint4']]
@@ -275,7 +325,7 @@ class _ExerciseDetailViewState extends State<ExerciseDetailView> {
             borderRadius: BorderRadius.circular(12),
             border: const Border(left: BorderSide(color: NexaColors.blue, width: 4)),
           ),
-          child: Text(ex['enonce'] ?? '',
+          child: LatexText(ex['enonce'] ?? '',
             style: const TextStyle(
               fontSize: 15, fontFamily: 'monospace',
               color: NexaColors.txt, height: 1.7,
@@ -283,8 +333,63 @@ class _ExerciseDetailViewState extends State<ExerciseDetailView> {
         ),
         const SizedBox(height: 20),
 
+        // ── FREE-TEXT PHASE: guess before the choices are ever shown ──
+        if (_inTextPhase && _result == null) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: NexaColors.card,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: NexaColors.border),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                const Text('✍️ Écrivez votre réponse',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: NexaColors.txt)),
+                Text('Essai ${_textTries + 1}/$_maxTextTries',
+                  style: const TextStyle(fontSize: 12, color: NexaColors.txt3, fontWeight: FontWeight.w600)),
+              ]),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _textController,
+                onSubmitted: (_) => _checkTextAnswer(),
+                decoration: InputDecoration(
+                  hintText: 'Votre réponse...',
+                  filled: true, fillColor: NexaColors.bg,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: NexaColors.border)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+              ),
+              if (_textFeedback != null) ...[
+                const SizedBox(height: 8),
+                Text(_textFeedback!, style: const TextStyle(color: NexaColors.red, fontSize: 12, fontWeight: FontWeight.w600)),
+              ],
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _checkingText ? null : _checkTextAnswer,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: NexaColors.blue, foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    elevation: 0,
+                  ),
+                  child: _checkingText
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text('Vérifier ma réponse', style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text('4 essais libres, puis indices et choix multiples si besoin.',
+                style: TextStyle(fontSize: 11, color: NexaColors.txt3)),
+            ]),
+          ),
+          const SizedBox(height: 20),
+        ],
+
         // ── HINTS SECTION (always shown if hints exist and not submitted) ──
-        if (_hints.isNotEmpty && _result == null) ...[
+        if (!_inTextPhase && _hints.isNotEmpty && _result == null) ...[
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -348,7 +453,7 @@ class _ExerciseDetailViewState extends State<ExerciseDetailView> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(_hints[i],
+                LatexText(_hints[i],
                   style: const TextStyle(
                     fontSize: 13, color: NexaColors.txt2, height: 1.6)),
               ]),
@@ -358,7 +463,7 @@ class _ExerciseDetailViewState extends State<ExerciseDetailView> {
         ],
 
         // ── QCM CHOICES (shown before submission) ──
-        if (_result == null) ...[
+        if (!_inTextPhase && _result == null) ...[
           const Text('Choisissez votre réponse :',
             style: TextStyle(
               fontWeight: FontWeight.w700, fontSize: 14, color: NexaColors.txt)),
@@ -490,7 +595,7 @@ class _ExerciseDetailViewState extends State<ExerciseDetailView> {
                       color: NexaColors.blue, letterSpacing: 1,
                     )),
                   const SizedBox(height: 8),
-                  Text(_result!['solution'] ?? '',
+                  LatexText(_result!['solution'] ?? '',
                     style: const TextStyle(
                       fontSize: 13, fontFamily: 'monospace',
                       color: NexaColors.txt2, height: 1.7,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/nexa_theme.dart';
 import '../../../widgets/shared_widgets.dart';
+import '../../../widgets/latex_text.dart';
 
 class ConcoursScreen extends StatefulWidget {
   const ConcoursScreen({super.key});
@@ -255,6 +256,15 @@ class _ContestSessionViewState extends State<ContestSessionView> {
   bool _submitting = false;
   int _totalXp = 0;
 
+  // Free-text "guess before you see the choices" phase — recomputed per
+  // question since hasReponseTexte varies question to question.
+  bool _inTextPhase = false;
+  final _textController = TextEditingController();
+  int _textTries = 0;
+  bool _checkingText = false;
+  String? _textFeedback;
+  static const _maxTextTries = 4;
+
   List<dynamic> get _questions =>
       List<dynamic>.from(widget.contest['questions'] ?? []);
 
@@ -287,6 +297,49 @@ class _ContestSessionViewState extends State<ContestSessionView> {
     _currentIndex = widget.initialQuestionIndex;
     _sessionId = widget.session['id'];
     _totalXp = widget.session['xpTotal'] ?? 0;
+    _inTextPhase = _currentQuestion?['hasReponseTexte'] == true;
+  }
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _checkTextAnswer() async {
+    final guess = _textController.text.trim();
+    if (guess.isEmpty || _checkingText || _currentQuestion == null) return;
+    setState(() { _checkingText = true; _textFeedback = null; });
+    try {
+      final res = await ApiClient.checkContestTextAnswer(
+        _sessionId, _currentQuestion!['id'], guess,
+      );
+      if (res['correct'] == true) {
+        setState(() {
+          _result = {
+            'isCorrect': true,
+            'xpEarned': res['xpEarned'],
+            'solution': res['solution'],
+            'questionsCompleted': res['questionsCompleted'],
+            'totalQuestions': res['totalQuestions'],
+            'isCompleted': res['isCompleted'],
+          };
+          _totalXp += (res['xpEarned'] as int? ?? 0);
+        });
+        return;
+      }
+      _textTries++;
+      if (_textTries >= _maxTextTries) {
+        setState(() => _inTextPhase = false);
+      } else {
+        setState(() => _textFeedback = 'Incorrect — essai $_textTries/$_maxTextTries. Réessayez !');
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Erreur, réessayez')));
+    } finally {
+      if (mounted) setState(() => _checkingText = false);
+    }
   }
 
   Future<void> _submit() async {
@@ -317,6 +370,10 @@ class _ContestSessionViewState extends State<ContestSessionView> {
       _hintsRevealed = 0;
       _selectedChoiceId = null;
       _result = null;
+      _inTextPhase = _currentQuestion?['hasReponseTexte'] == true;
+      _textController.clear();
+      _textTries = 0;
+      _textFeedback = null;
     });
   }
 
@@ -406,13 +463,68 @@ class _ContestSessionViewState extends State<ContestSessionView> {
             borderRadius: BorderRadius.circular(12),
             border: const Border(left: BorderSide(color: NexaColors.blue, width: 4)),
           ),
-          child: Text(q['enonce'] ?? '',
+          child: LatexText(q['enonce'] ?? '',
             style: const TextStyle(fontSize: 15, fontFamily: 'monospace', color: NexaColors.txt, height: 1.7)),
         ),
         const SizedBox(height: 20),
 
+        // ── FREE-TEXT PHASE: guess before the choices are ever shown ──
+        if (_inTextPhase && _result == null) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: NexaColors.card,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: NexaColors.border),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                const Text('✍️ Écrivez votre réponse',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: NexaColors.txt)),
+                Text('Essai ${_textTries + 1}/$_maxTextTries',
+                  style: const TextStyle(fontSize: 12, color: NexaColors.txt3, fontWeight: FontWeight.w600)),
+              ]),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _textController,
+                onSubmitted: (_) => _checkTextAnswer(),
+                decoration: InputDecoration(
+                  hintText: 'Votre réponse...',
+                  filled: true, fillColor: NexaColors.bg,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: NexaColors.border)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+              ),
+              if (_textFeedback != null) ...[
+                const SizedBox(height: 8),
+                Text(_textFeedback!, style: const TextStyle(color: NexaColors.red, fontSize: 12, fontWeight: FontWeight.w600)),
+              ],
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _checkingText ? null : _checkTextAnswer,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: NexaColors.blue, foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    elevation: 0,
+                  ),
+                  child: _checkingText
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text('Vérifier ma réponse', style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text('4 essais libres, puis indices et choix multiples si besoin.',
+                style: TextStyle(fontSize: 11, color: NexaColors.txt3)),
+            ]),
+          ),
+          const SizedBox(height: 20),
+        ],
+
         // Hints
-        if (_hints.isNotEmpty && _result == null) ...[
+        if (!_inTextPhase && _hints.isNotEmpty && _result == null) ...[
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -451,7 +563,7 @@ class _ContestSessionViewState extends State<ContestSessionView> {
                 Text('INDICE ${i + 1}  •  -10% XP',
                   style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: colors[i % colors.length], letterSpacing: 0.5)),
                 const SizedBox(height: 4),
-                Text(_hints[i], style: const TextStyle(fontSize: 13, color: NexaColors.txt2, height: 1.6)),
+                LatexText(_hints[i], style: const TextStyle(fontSize: 13, color: NexaColors.txt2, height: 1.6)),
               ]),
             );
           }),
@@ -459,7 +571,7 @@ class _ContestSessionViewState extends State<ContestSessionView> {
         ],
 
         // Choices
-        if (_result == null) ...[
+        if (!_inTextPhase && _result == null) ...[
           const Text('Choisissez votre réponse :',
             style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: NexaColors.txt)),
           const SizedBox(height: 12),
@@ -546,7 +658,7 @@ class _ContestSessionViewState extends State<ContestSessionView> {
                   const Text('📋 SOLUTION',
                     style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: NexaColors.blue, letterSpacing: 1)),
                   const SizedBox(height: 6),
-                  Text(_result!['solution'] ?? '',
+                  LatexText(_result!['solution'] ?? '',
                     style: const TextStyle(fontSize: 13, fontFamily: 'monospace', color: NexaColors.txt2, height: 1.6)),
                 ]),
               ),

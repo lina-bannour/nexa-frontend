@@ -146,6 +146,13 @@ class ApiClient {
     return res.data;
   }
 
+  // Free-text guess, checked before the multiple-choice options are ever
+  // revealed. Returns {correct: false} or {correct: true, xpEarned, solution}.
+  static Future<Map<String, dynamic>> checkExerciseTextAnswer(String exerciseId, String text) async {
+    final res = await _dio.post('/exercises/$exerciseId/check-answer', data: {'text': text});
+    return res.data;
+  }
+
   // LEADERBOARD
   static Future<List<dynamic>> getLeaderboard({String? filiere, String? period}) async {
     final res = await _dio.get('/users/leaderboard', queryParameters: {
@@ -185,6 +192,15 @@ static Future<Map<String, dynamic>> submitContestAnswer(
   final res = await _dio.post(
     '/contests/sessions/$sessionId/questions/$questionId/submit',
     data: {'choiceId': choiceId, 'hintsUsed': hintsUsed},
+  );
+  return res.data;
+}
+
+static Future<Map<String, dynamic>> checkContestTextAnswer(
+  String sessionId, String questionId, String text) async {
+  final res = await _dio.post(
+    '/contests/sessions/$sessionId/questions/$questionId/check-answer',
+    data: {'text': text},
   );
   return res.data;
 }
