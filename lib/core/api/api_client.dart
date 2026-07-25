@@ -1,9 +1,16 @@
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiClient {
   static const String baseUrl = 'http://172.20.24.88:3000';
   static Map<String, dynamic>? _cachedProfile;
+
+  // Flipped to true whenever a request comes back 503 (backend maintenance
+  // mode). The app shell listens to this to show a full-screen notice
+  // instead of the normal UI. Cleared automatically on the next successful
+  // response.
+  static final ValueNotifier<bool> maintenanceMode = ValueNotifier(false);
 
   static final Dio _dio = Dio(BaseOptions(
     baseUrl: baseUrl,
@@ -12,6 +19,25 @@ class ApiClient {
     headers: {'Content-Type': 'application/json'},
   ));
 
+  static bool _interceptorAttached = false;
+
+  static void _ensureMaintenanceInterceptor() {
+    if (_interceptorAttached) return;
+    _interceptorAttached = true;
+    _dio.interceptors.add(InterceptorsWrapper(
+      onResponse: (response, handler) {
+        if (maintenanceMode.value) maintenanceMode.value = false;
+        return handler.next(response);
+      },
+      onError: (error, handler) {
+        if (error.response?.statusCode == 503) {
+          maintenanceMode.value = true;
+        }
+        return handler.next(error);
+      },
+    ));
+  }
+
   static Future<void> setToken(String token) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('access_token', token);
@@ -19,6 +45,7 @@ class ApiClient {
   }
 
   static Future<void> loadToken() async {
+    _ensureMaintenanceInterceptor();
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('access_token');
     if (token != null) {

@@ -8,6 +8,7 @@ import 'features/leaderboard/presentation/leaderboard_screen.dart';
 import 'features/contests/presentation/concours_screen.dart';
 import 'features/admin/presentation/admin_shell.dart';
 import 'features/home/presentation/profile_screen.dart';
+import 'features/maintenance/presentation/maintenance_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -85,6 +86,17 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: ApiClient.maintenanceMode,
+      builder: (context, isMaintenance, child) {
+        if (isMaintenance) return const MaintenanceScreen();
+        return child!;
+      },
+      child: _buildContent(context),
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
     if (!_isLoggedIn) {
       return LoginScreen(onLogin: _onLogin);
     }

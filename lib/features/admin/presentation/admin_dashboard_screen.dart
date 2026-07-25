@@ -41,6 +41,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final kpis = _data?['kpis'] as Map<String, dynamic>? ?? {};
     final byFiliere = (_data?['studentsByFiliere'] as List<dynamic>? ?? []);
     final dailyActivity = (_data?['dailyActivity'] as List<dynamic>? ?? []);
+    final recentRegistrations = (_data?['recentRegistrations'] as List<dynamic>? ?? []);
 
     return RefreshIndicator(
       onRefresh: _load,
@@ -140,6 +141,31 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       ),
                     ),
                   ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          AdCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Nouvelles inscriptions', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                    Text('Étudiants inscrits (7 derniers jours)', style: TextStyle(fontSize: 11, color: NexaColors.txt3)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                AdBarChart(
+                  data: recentRegistrations.map((d) {
+                    final dateStr = d['date']?.toString() ?? '';
+                    final label = dateStr.length >= 10 ? dateStr.substring(8, 10) : '?';
+                    return MapEntry(label, (d['count'] ?? 0) as num);
+                  }).toList(),
+                  color: NexaColors.purple,
                 ),
               ],
             ),
