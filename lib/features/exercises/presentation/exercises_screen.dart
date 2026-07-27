@@ -202,7 +202,7 @@ class _ExerciseDetailViewState extends State<ExerciseDetailView> {
     if (guess.isEmpty || _checkingText) return;
     setState(() { _checkingText = true; _textFeedback = null; });
     try {
-      final res = await ApiClient.checkExerciseTextAnswer(widget.exercise['id'], guess);
+      final res = await ApiClient.checkExerciseTextAnswer(widget.exercise['id'], guess, _hintsRevealed);
       if (res['correct'] == true) {
         setState(() => _result = {
           'isCorrect': true,
@@ -381,7 +381,7 @@ class _ExerciseDetailViewState extends State<ExerciseDetailView> {
                 ),
               ),
               const SizedBox(height: 6),
-              Text('4 essais libres, puis indices et choix multiples si besoin.',
+              Text('4 essais libres. Les indices restent disponibles pendant vos essais.',
                 style: TextStyle(fontSize: 11, color: NexaColors.txt3)),
             ]),
           ),
@@ -389,7 +389,7 @@ class _ExerciseDetailViewState extends State<ExerciseDetailView> {
         ],
 
         // ── HINTS SECTION (always shown if hints exist and not submitted) ──
-        if (!_inTextPhase && _hints.isNotEmpty && _result == null) ...[
+        if (_hints.isNotEmpty && _result == null) ...[
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [

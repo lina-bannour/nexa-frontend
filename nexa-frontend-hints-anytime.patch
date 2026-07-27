@@ -1,0 +1,118 @@
+From d20f94b952e9ad9b961deed17710dfdd2d87a2a7 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Sun, 26 Jul 2026 16:36:04 +0000
+Subject: [PATCH] fix: hints available throughout the free-text phase, not just
+ after it
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Pairs with the backend patch of the same name. Hints are now visible and
+usable the entire time the free-text field is showing — not gated behind
+exhausting all 4 tries. Only the multiple-choice options themselves stay
+hidden until then, exactly like before.
+
+- checkExerciseTextAnswer/checkContestTextAnswer now send the number of
+  hints currently revealed, so a correct free-text guess after viewing
+  hints is scored with the same reduced XP a QCM submission would give —
+  no more automatic full-XP regardless of hint usage.
+- Removed the incorrect helper copy implying hints unlock later.
+---
+ lib/core/api/api_client.dart                              | 8 ++++----
+ lib/features/contests/presentation/concours_screen.dart   | 6 +++---
+ lib/features/exercises/presentation/exercises_screen.dart | 6 +++---
+ 3 files changed, 10 insertions(+), 10 deletions(-)
+
+diff --git a/lib/core/api/api_client.dart b/lib/core/api/api_client.dart
+index c668c65..74e91a5 100644
+--- a/lib/core/api/api_client.dart
++++ b/lib/core/api/api_client.dart
+@@ -148,8 +148,8 @@ class ApiClient {
+ 
+   // Free-text guess, checked before the multiple-choice options are ever
+   // revealed. Returns {correct: false} or {correct: true, xpEarned, solution}.
+-  static Future<Map<String, dynamic>> checkExerciseTextAnswer(String exerciseId, String text) async {
+-    final res = await _dio.post('/exercises/$exerciseId/check-answer', data: {'text': text});
++  static Future<Map<String, dynamic>> checkExerciseTextAnswer(String exerciseId, String text, int hintsUsed) async {
++    final res = await _dio.post('/exercises/$exerciseId/check-answer', data: {'text': text, 'hintsUsed': hintsUsed});
+     return res.data;
+   }
+ 
+@@ -197,10 +197,10 @@ static Future<Map<String, dynamic>> submitContestAnswer(
+ }
+ 
+ static Future<Map<String, dynamic>> checkContestTextAnswer(
+-  String sessionId, String questionId, String text) async {
++  String sessionId, String questionId, String text, int hintsUsed) async {
+   final res = await _dio.post(
+     '/contests/sessions/$sessionId/questions/$questionId/check-answer',
+-    data: {'text': text},
++    data: {'text': text, 'hintsUsed': hintsUsed},
+   );
+   return res.data;
+ }
+diff --git a/lib/features/contests/presentation/concours_screen.dart b/lib/features/contests/presentation/concours_screen.dart
+index 0efae4b..422aa87 100644
+--- a/lib/features/contests/presentation/concours_screen.dart
++++ b/lib/features/contests/presentation/concours_screen.dart
+@@ -312,7 +312,7 @@ class _ContestSessionViewState extends State<ContestSessionView> {
+     setState(() { _checkingText = true; _textFeedback = null; });
+     try {
+       final res = await ApiClient.checkContestTextAnswer(
+-        _sessionId, _currentQuestion!['id'], guess,
++        _sessionId, _currentQuestion!['id'], guess, _hintsRevealed,
+       );
+       if (res['correct'] == true) {
+         setState(() {
+@@ -516,7 +516,7 @@ class _ContestSessionViewState extends State<ContestSessionView> {
+                 ),
+               ),
+               const SizedBox(height: 6),
+-              Text('4 essais libres, puis indices et choix multiples si besoin.',
++              Text('4 essais libres. Les indices restent disponibles pendant vos essais.',
+                 style: TextStyle(fontSize: 11, color: NexaColors.txt3)),
+             ]),
+           ),
+@@ -524,7 +524,7 @@ class _ContestSessionViewState extends State<ContestSessionView> {
+         ],
+ 
+         // Hints
+-        if (!_inTextPhase && _hints.isNotEmpty && _result == null) ...[
++        if (_hints.isNotEmpty && _result == null) ...[
+           Row(
+             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+             children: [
+diff --git a/lib/features/exercises/presentation/exercises_screen.dart b/lib/features/exercises/presentation/exercises_screen.dart
+index be32dd0..dbf8c5a 100644
+--- a/lib/features/exercises/presentation/exercises_screen.dart
++++ b/lib/features/exercises/presentation/exercises_screen.dart
+@@ -202,7 +202,7 @@ class _ExerciseDetailViewState extends State<ExerciseDetailView> {
+     if (guess.isEmpty || _checkingText) return;
+     setState(() { _checkingText = true; _textFeedback = null; });
+     try {
+-      final res = await ApiClient.checkExerciseTextAnswer(widget.exercise['id'], guess);
++      final res = await ApiClient.checkExerciseTextAnswer(widget.exercise['id'], guess, _hintsRevealed);
+       if (res['correct'] == true) {
+         setState(() => _result = {
+           'isCorrect': true,
+@@ -381,7 +381,7 @@ class _ExerciseDetailViewState extends State<ExerciseDetailView> {
+                 ),
+               ),
+               const SizedBox(height: 6),
+-              Text('4 essais libres, puis indices et choix multiples si besoin.',
++              Text('4 essais libres. Les indices restent disponibles pendant vos essais.',
+                 style: TextStyle(fontSize: 11, color: NexaColors.txt3)),
+             ]),
+           ),
+@@ -389,7 +389,7 @@ class _ExerciseDetailViewState extends State<ExerciseDetailView> {
+         ],
+ 
+         // ── HINTS SECTION (always shown if hints exist and not submitted) ──
+-        if (!_inTextPhase && _hints.isNotEmpty && _result == null) ...[
++        if (_hints.isNotEmpty && _result == null) ...[
+           Row(
+             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+             children: [
+-- 
+2.43.0
+

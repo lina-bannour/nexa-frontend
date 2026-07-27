@@ -148,8 +148,8 @@ class ApiClient {
 
   // Free-text guess, checked before the multiple-choice options are ever
   // revealed. Returns {correct: false} or {correct: true, xpEarned, solution}.
-  static Future<Map<String, dynamic>> checkExerciseTextAnswer(String exerciseId, String text) async {
-    final res = await _dio.post('/exercises/$exerciseId/check-answer', data: {'text': text});
+  static Future<Map<String, dynamic>> checkExerciseTextAnswer(String exerciseId, String text, int hintsUsed) async {
+    final res = await _dio.post('/exercises/$exerciseId/check-answer', data: {'text': text, 'hintsUsed': hintsUsed});
     return res.data;
   }
 
@@ -197,10 +197,10 @@ static Future<Map<String, dynamic>> submitContestAnswer(
 }
 
 static Future<Map<String, dynamic>> checkContestTextAnswer(
-  String sessionId, String questionId, String text) async {
+  String sessionId, String questionId, String text, int hintsUsed) async {
   final res = await _dio.post(
     '/contests/sessions/$sessionId/questions/$questionId/check-answer',
-    data: {'text': text},
+    data: {'text': text, 'hintsUsed': hintsUsed},
   );
   return res.data;
 }

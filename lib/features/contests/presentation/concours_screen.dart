@@ -356,7 +356,7 @@ class _ContestSessionViewState extends State<ContestSessionView> {
     setState(() { _checkingText = true; _textFeedback = null; });
     try {
       final res = await ApiClient.checkContestTextAnswer(
-        _sessionId, _currentQuestion!['id'], guess,
+        _sessionId, _currentQuestion!['id'], guess, _hintsRevealed,
       );
       if (res['correct'] == true) {
         setState(() {
@@ -560,7 +560,7 @@ class _ContestSessionViewState extends State<ContestSessionView> {
                 ),
               ),
               const SizedBox(height: 6),
-              Text('4 essais libres, puis indices et choix multiples si besoin.',
+              Text('4 essais libres. Les indices restent disponibles pendant vos essais.',
                 style: TextStyle(fontSize: 11, color: NexaColors.txt3)),
             ]),
           ),
@@ -568,7 +568,7 @@ class _ContestSessionViewState extends State<ContestSessionView> {
         ],
 
         // Hints
-        if (!_inTextPhase && _hints.isNotEmpty && _result == null) ...[
+        if (_hints.isNotEmpty && _result == null) ...[
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
