@@ -157,7 +157,10 @@ class _ConcoursScreenState extends State<ConcoursScreen> {
                               style: const TextStyle(color: NexaColors.txt3, fontSize: 12)),
                           ]),
                         ),
-                        ...entry.value.map((c) => Padding(
+                        ...entry.value.map((c) {
+                          final totalQuestions = c['_count']?['questions'] ?? 0;
+                          final myProgress = c['myProgress'] as Map<String, dynamic>?;
+                          return Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: NexaCard(
                             onTap: () => _openContest(c['id']),
@@ -189,20 +192,61 @@ class _ConcoursScreenState extends State<ConcoursScreen> {
                                     color: _filiereColors[c['filiere']] ?? NexaColors.blue,
                                   ),
                                   const SizedBox(width: 6),
-                                  Text('${c['_count']?['questions'] ?? 0} questions',
+                                  Text('$totalQuestions questions',
                                     style: const TextStyle(color: NexaColors.txt3, fontSize: 11)),
                                 ]),
+                                if (myProgress != null) ...[
+                                  const SizedBox(height: 6),
+                                  _progressBadge(myProgress, totalQuestions),
+                                ],
                               ])),
                               const Icon(Icons.chevron_right, color: NexaColors.txt3),
                             ]),
                           ),
-                        )),
+                        );
+                        }),
                       ],
                     );
                   }).toList(),
                 ),
         ),
       ],
+    );
+  }
+
+  Widget _progressBadge(Map<String, dynamic> myProgress, int totalQuestions) {
+    final isCompleted = myProgress['isCompleted'] == true;
+    final completed = myProgress['questionsCompleted'] ?? 0;
+    final xp = myProgress['xpTotal'] ?? 0;
+
+    if (isCompleted) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: NexaColors.green.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.check_circle, size: 12, color: NexaColors.green),
+          const SizedBox(width: 4),
+          Text('Terminé · $xp XP',
+            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: NexaColors.green)),
+        ]),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFD97706).withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.play_circle_outline, size: 12, color: Color(0xFFD97706)),
+        const SizedBox(width: 4),
+        Text('En cours · $completed/$totalQuestions',
+          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFFD97706))),
+      ]),
     );
   }
 
