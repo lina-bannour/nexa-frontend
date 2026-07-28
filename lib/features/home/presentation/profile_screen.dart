@@ -46,6 +46,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  static const _levels = [
+    (name: 'Novice', xp: 0, icon: '🌱'),
+    (name: 'Initié', xp: 150, icon: '🔹'),
+    (name: 'Apprenti', xp: 400, icon: '📘'),
+    (name: 'Intermédiaire', xp: 800, icon: '⚙️'),
+    (name: 'Avancé', xp: 1400, icon: '🚀'),
+    (name: 'Expert', xp: 2200, icon: '🎯'),
+    (name: 'Maître', xp: 3500, icon: '⭐'),
+    (name: 'Élite', xp: 5000, icon: '🏆'),
+  ];
+
   String _levelName(int xp) {
     if (xp >= 5000) return 'Élite 🏆';
     if (xp >= 3500) return 'Maître ⭐';
@@ -82,6 +93,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final filiere = _profile?['filiere'] ?? 'Non spécifiée';
     final ecole = _profile?['ecole'] ?? 'Non spécifiée';
     final attempts = _profile?['_count']?['attempts'] ?? 0;
+    final postsCount = _profile?['_count']?['posts'] ?? 0;
+    final contestsCompleted = _profile?['contestsCompleted'] ?? 0;
     final levelName = _levelName(xp);
     final nextXp = _nextLevelXp(xp);
     final minXp = _currentLevelMin(xp);
@@ -220,6 +233,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 24),
 
+            // Progression Section (checklist + rank ladder)
+            _buildProgressionSection(),
+            const SizedBox(height: 24),
+
             // Navigation List
             Container(
               decoration: BoxDecoration(
@@ -258,6 +275,178 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildProgressionSection() {
+    final xp = _profile?['xpTotal'] ?? 0;
+    final attempts = _profile?['_count']?['attempts'] ?? 0;
+    final postsCount = _profile?['_count']?['posts'] ?? 0;
+    final contestsCompleted = _profile?['contestsCompleted'] ?? 0;
+    final levelName = _levelName(xp);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: NexaColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          )
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'PROGRESSION',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: NexaColors.txt3,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Checklist of engagement milestones
+          _checklistRow(
+            icon: '📝',
+            label: '$attempts exercice${attempts > 1 ? 's' : ''} résolu${attempts > 1 ? 's' : ''}',
+            done: attempts > 0,
+          ),
+          _checklistRow(
+            icon: '💬',
+            label: 'Publier sur le forum',
+            done: postsCount > 0,
+          ),
+          _checklistRow(
+            icon: '🏁',
+            label: 'Compléter un concours',
+            done: contestsCompleted > 0,
+          ),
+          _checklistRow(
+            icon: '🤖',
+            label: 'Utiliser l\'IA NEXA',
+            done: false,
+            comingSoon: true,
+          ),
+
+          const SizedBox(height: 20),
+          const Divider(height: 1, color: NexaColors.border),
+          const SizedBox(height: 16),
+
+          Row(
+            children: [
+              const Text('🚀 ', style: TextStyle(fontSize: 13)),
+              Text(
+                'NIVEAUX',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: NexaColors.txt3,
+                  letterSpacing: 1,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          ..._levels.map((lvl) {
+            final achieved = xp >= lvl.xp;
+            final isCurrent = lvl.name == levelName.split(' ').first;
+            return _levelRow(
+              icon: lvl.icon,
+              name: lvl.name,
+              xpRequired: lvl.xp,
+              achieved: achieved,
+              isCurrent: isCurrent,
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _checklistRow({required String icon, required String label, required bool done, bool comingSoon = false}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: done ? NexaColors.green.withOpacity(0.08) : NexaColors.bg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: done ? NexaColors.green.withOpacity(0.25) : NexaColors.border),
+      ),
+      child: Row(
+        children: [
+          Text(icon, style: const TextStyle(fontSize: 15)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: comingSoon ? NexaColors.txt3 : NexaColors.txt,
+              ),
+            ),
+          ),
+          if (comingSoon)
+            const Text('Bientôt', style: TextStyle(fontSize: 10, color: NexaColors.txt3, fontStyle: FontStyle.italic))
+          else
+            Icon(
+              done ? Icons.check_circle : Icons.radio_button_unchecked,
+              size: 18,
+              color: done ? NexaColors.green : NexaColors.txt3,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _levelRow({required String icon, required String name, required int xpRequired, required bool achieved, required bool isCurrent}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: isCurrent ? NexaColors.blue.withOpacity(0.08) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: isCurrent ? NexaColors.blue.withOpacity(0.4) : NexaColors.border),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            achieved ? Icons.check_circle : Icons.lock_outline,
+            size: 16,
+            color: achieved ? NexaColors.green : NexaColors.txt3,
+          ),
+          const SizedBox(width: 8),
+          Text(icon, style: const TextStyle(fontSize: 13)),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              name,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: isCurrent ? NexaColors.blue : (achieved ? NexaColors.txt : NexaColors.txt3),
+              ),
+            ),
+          ),
+          if (isCurrent)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(color: NexaColors.blue, borderRadius: BorderRadius.circular(20)),
+              child: const Text('Actuel', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
+            )
+          else
+            Text('$xpRequired XP', style: const TextStyle(fontSize: 11, color: NexaColors.txt3)),
+        ],
       ),
     );
   }
