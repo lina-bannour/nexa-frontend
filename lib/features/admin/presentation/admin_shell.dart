@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/nexa_theme.dart';
 import 'admin_dashboard_screen.dart';
+import 'admin_analytics_screen.dart';
 import 'admin_students_screen.dart';
 import 'admin_content_screen.dart';
 import 'admin_forum_screen.dart';
@@ -24,6 +25,7 @@ class _AdminTab {
 
 const _tabs = [
   _AdminTab('dashboard', Icons.grid_view_rounded, 'Dashboard'),
+  _AdminTab('analytics', Icons.insights_rounded, 'Analytique'),
   _AdminTab('students', Icons.groups_rounded, 'Étudiants'),
   _AdminTab('content', Icons.menu_book_rounded, 'Contenu'),
   _AdminTab('forum', Icons.forum_rounded, 'Modération'),
@@ -35,6 +37,8 @@ class _AdminShellState extends State<AdminShell> {
 
   Widget _screen() {
     switch (_tab) {
+      case 'analytics':
+        return const AdminAnalyticsScreen();
       case 'students':
         return const AdminStudentsScreen();
       case 'content':

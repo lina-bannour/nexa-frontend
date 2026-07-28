@@ -252,6 +252,11 @@ static Future<Map<String, dynamic>> checkContestTextAnswer(
     return res.data;
   }
 
+  static Future<Map<String, dynamic>> getAdminAnalytics() async {
+    final res = await _dio.get('/admin/dashboard/analytics');
+    return res.data;
+  }
+
   // Returns { data: [...], pagination: { page, pageSize, total, totalPages } }.
   // Kept as a Map (not just the list) so callers can drive infinite scroll.
   static Future<Map<String, dynamic>> getAdminUsersPage({
