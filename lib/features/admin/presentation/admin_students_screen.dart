@@ -331,6 +331,23 @@ class _StudentDetailContentState extends State<_StudentDetailContent> {
     }
   }
 
+  Future<void> _openMessageComposer() async {
+    final name = '${_detail?['prenom'] ?? widget.student['prenom'] ?? ''}'.trim();
+
+    final sent = await showAdModal<bool>(
+      context,
+      title: 'Envoyer un message',
+      child: _MessageComposer(
+        studentId: widget.student['id'],
+        recipientLabel: name.isEmpty ? '${_detail?['email'] ?? ''}' : name,
+      ),
+    );
+
+    if (sent == true && mounted) {
+      showAdSnack(context, 'Message envoyé.');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = _detail ?? widget.student;
@@ -359,7 +376,7 @@ class _StudentDetailContentState extends State<_StudentDetailContent> {
                     ),
                     const SizedBox(width: 8),
                   ],
-                  AdTag.status(status),
+                  _statusDot(status),
                 ]),
               ],
             ),
@@ -378,27 +395,80 @@ class _StudentDetailContentState extends State<_StudentDetailContent> {
             children: [
               _statTile('⚡', '${s['xpTotal'] ?? 0}', 'XP', NexaColors.gold),
               _statTile('🔥', '${s['streak'] ?? 0}j', 'Streak', NexaColors.red),
-              _statTile('📝', '${s['exercisesSolved'] ?? '—'}', 'Résolus', NexaColors.blue),
-              _statTile('🎯', '${s['exercisesAttempted'] ?? '—'}', 'Tentés', NexaColors.txt2),
+              _statTile('📝', '${s['exercisesSolved'] ?? s['exercisesAttempted'] ?? '—'}', 'Exercices', NexaColors.blue),
+              _statTile('📅', _monthYear(s['createdAt']), 'Inscrit', NexaColors.txt2),
             ],
           ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(color: NexaColors.blueLight, borderRadius: BorderRadius.circular(10)),
+            child: Row(children: [
+              const Icon(Icons.schedule_rounded, size: 15, color: NexaColors.blue),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('Dernière activité : ${_relativeTime(s['lastActivityAt'])}',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: NexaColors.blue)),
+              ),
+            ]),
+          ),
           const SizedBox(height: 16),
+          _xpProgressionSection(s['xpProgression'] as List<dynamic>?),
+          const SizedBox(height: 18),
           Row(children: [
+            Expanded(child: AdBtn(label: '📩 Envoyer message', variant: AdBtnVariant.secondary, onPressed: _openMessageComposer)),
+            const SizedBox(width: 10),
             Expanded(child: AdBtn(label: status == 'SUSPENDED' || status == 'BANNED' ? '✅ Réactiver' : '🚫 Suspendre',
                 variant: status == 'SUSPENDED' || status == 'BANNED' ? AdBtnVariant.green : AdBtnVariant.red,
                 onPressed: status == 'SUSPENDED' || status == 'BANNED' ? widget.onReactivate : widget.onSuspend)),
           ]),
           const SizedBox(height: 8),
           Row(children: [
-            Expanded(child: AdBtn(label: 'Bannir définitivement', variant: AdBtnVariant.red, onPressed: status == 'BANNED' ? null : widget.onBan)),
-          ]),
-          const SizedBox(height: 8),
-          Row(children: [
-            Expanded(child: AdBtn(label: '👑 Promouvoir admin', variant: AdBtnVariant.secondary, onPressed: widget.onPromote)),
+            Expanded(child: AdBtn(label: 'Bannir définitivement', small: true, variant: AdBtnVariant.ghost, onPressed: status == 'BANNED' ? null : widget.onBan)),
+            const SizedBox(width: 10),
+            Expanded(child: AdBtn(label: '👑 Promouvoir admin', small: true, variant: AdBtnVariant.ghost, onPressed: widget.onPromote)),
           ]),
         ],
       ],
     );
+  }
+
+  Widget _xpProgressionSection(List<dynamic>? progression) {
+    final points = (progression ?? []).map((p) => (p['xp'] ?? 0) as num).toList();
+    return AdCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AdLineChart(values: points, color: NexaColors.blue, height: 80),
+          const SizedBox(height: 6),
+          const Text('Progression XP (12 mois)', style: TextStyle(fontSize: 11, color: NexaColors.txt3)),
+        ],
+      ),
+    );
+  }
+
+  Widget _statusDot(String status) {
+    Color color;
+    String label;
+    switch (status.toUpperCase()) {
+      case 'ACTIVE':
+        color = const Color(0xFF16A34A); label = 'actif'; break;
+      case 'INACTIVE':
+        color = NexaColors.txt3; label = 'inactif'; break;
+      case 'SUSPENDED':
+        color = NexaColors.orange; label = 'suspendu'; break;
+      case 'BANNED':
+        color = NexaColors.red; label = 'banni'; break;
+      default:
+        color = NexaColors.txt3; label = status.toLowerCase();
+    }
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Container(width: 7, height: 7, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+      const SizedBox(width: 5),
+      Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color)),
+    ]);
   }
 
   Widget _statTile(String icon, String value, String label, Color color) {
@@ -411,6 +481,85 @@ class _StudentDetailContentState extends State<_StudentDetailContent> {
         Text(value, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: color)),
         Text(label, style: const TextStyle(fontSize: 9, color: NexaColors.txt3)),
       ]),
+    );
+  }
+
+  static const _months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sept', 'Oct', 'Nov', 'Déc'];
+
+  String _monthYear(dynamic isoDate) {
+    if (isoDate == null) return '—';
+    final d = DateTime.tryParse('$isoDate');
+    if (d == null) return '—';
+    return '${_months[d.month - 1]} ${d.year}';
+  }
+
+  String _relativeTime(dynamic isoDate) {
+    if (isoDate == null) return 'jamais';
+    final d = DateTime.tryParse('$isoDate');
+    if (d == null) return 'jamais';
+    final diff = DateTime.now().difference(d);
+    if (diff.inMinutes < 1) return "à l'instant";
+    if (diff.inMinutes < 60) return 'Il y a ${diff.inMinutes} min';
+    if (diff.inHours < 24) return 'Il y a ${diff.inHours}h';
+    if (diff.inDays < 30) return 'Il y a ${diff.inDays}j';
+    return _monthYear(isoDate);
+  }
+}
+
+class _MessageComposer extends StatefulWidget {
+  final String studentId;
+  final String recipientLabel;
+  const _MessageComposer({required this.studentId, required this.recipientLabel});
+
+  @override
+  State<_MessageComposer> createState() => _MessageComposerState();
+}
+
+class _MessageComposerState extends State<_MessageComposer> {
+  final _subjectController = TextEditingController();
+  final _messageController = TextEditingController();
+  bool _sending = false;
+
+  Future<void> _send() async {
+    if (_subjectController.text.trim().isEmpty || _messageController.text.trim().isEmpty) {
+      showAdSnack(context, 'Sujet et message requis.', error: true);
+      return;
+    }
+    setState(() => _sending = true);
+    try {
+      await ApiClient.sendAdminMessage(
+        widget.studentId,
+        _subjectController.text.trim(),
+        _messageController.text.trim(),
+      );
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _sending = false);
+        showAdSnack(context, "Échec de l'envoi.", error: true);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _subjectController.dispose();
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('À : ${widget.recipientLabel}', style: const TextStyle(fontSize: 12, color: NexaColors.txt3)),
+        const SizedBox(height: 12),
+        AdField(label: 'Sujet', controller: _subjectController),
+        AdField(label: 'Message', controller: _messageController, maxLines: 5),
+        const SizedBox(height: 4),
+        AdBtn(label: 'Envoyer', full: true, loading: _sending, onPressed: _send),
+      ],
     );
   }
 }

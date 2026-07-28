@@ -425,6 +425,80 @@ class _DonutPainter extends CustomPainter {
   bool shouldRepaint(covariant _DonutPainter oldDelegate) => true;
 }
 
+/// Simple filled line/area chart matching the mockup's XP progression graph.
+class AdLineChart extends StatelessWidget {
+  final List<num> values;
+  final Color color;
+  final double height;
+  const AdLineChart({super.key, required this.values, this.color = NexaColors.blue, this.height = 90});
+
+  @override
+  Widget build(BuildContext context) {
+    if (values.isEmpty || values.every((v) => v == 0)) {
+      return SizedBox(height: height, child: const Center(child: Text('Aucune donnée', style: TextStyle(color: NexaColors.txt3, fontSize: 12))));
+    }
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: CustomPaint(painter: _LineChartPainter(values: values, color: color)),
+    );
+  }
+}
+
+class _LineChartPainter extends CustomPainter {
+  final List<num> values;
+  final Color color;
+  _LineChartPainter({required this.values, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final maxV = values.fold<num>(0, (a, b) => a > b ? a : b);
+    final minV = values.fold<num>(values.first, (a, b) => a < b ? a : b);
+    final range = (maxV - minV) == 0 ? 1 : (maxV - minV);
+    final stepX = values.length > 1 ? size.width / (values.length - 1) : size.width;
+
+    Offset pointAt(int i) {
+      final normalized = (values[i] - minV) / range;
+      final y = size.height - (normalized * size.height * 0.85) - 4;
+      return Offset(stepX * i, y);
+    }
+
+    final linePath = Path()..moveTo(pointAt(0).dx, pointAt(0).dy);
+    for (var i = 1; i < values.length; i++) {
+      linePath.lineTo(pointAt(i).dx, pointAt(i).dy);
+    }
+
+    final fillPath = Path.from(linePath)
+      ..lineTo(pointAt(values.length - 1).dx, size.height)
+      ..lineTo(pointAt(0).dx, size.height)
+      ..close();
+
+    final fillPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [color.withOpacity(0.22), color.withOpacity(0.0)],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.drawPath(fillPath, fillPaint);
+
+    final linePaint = Paint()
+      ..color = color
+      ..strokeWidth = 2.4
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(linePath, linePaint);
+
+    final dotPaint = Paint()..color = color;
+    final lastPoint = pointAt(values.length - 1);
+    canvas.drawCircle(lastPoint, 3.5, dotPaint);
+    canvas.drawCircle(lastPoint, 5.5, Paint()..color = color.withOpacity(0.25));
+  }
+
+  @override
+  bool shouldRepaint(covariant _LineChartPainter oldDelegate) => oldDelegate.values != values;
+}
+
 void showAdSnack(BuildContext context, String message, {bool error = false}) {
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
     content: Text(message),
