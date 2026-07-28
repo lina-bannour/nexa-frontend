@@ -291,6 +291,7 @@ class _AdminStudentsScreenState extends State<AdminStudentsScreen> {
       onReactivate: () => _updateStatus(student, 'ACTIVE'),
       onBan: () => _updateStatus(student, 'BANNED'),
       onPromote: () => _promote(student),
+      onEdited: _load,
     ));
   }
 }
@@ -301,12 +302,14 @@ class _StudentDetailContent extends StatefulWidget {
   final VoidCallback onReactivate;
   final VoidCallback onBan;
   final VoidCallback onPromote;
+  final VoidCallback onEdited;
   const _StudentDetailContent({
     required this.student,
     required this.onSuspend,
     required this.onReactivate,
     required this.onBan,
     required this.onPromote,
+    required this.onEdited,
   });
 
   @override
@@ -345,6 +348,20 @@ class _StudentDetailContentState extends State<_StudentDetailContent> {
 
     if (sent == true && mounted) {
       showAdSnack(context, 'Message envoyé.');
+    }
+  }
+
+  Future<void> _editUser() async {
+    final saved = await showAdModal<bool>(
+      context,
+      title: 'Modifier les informations',
+      child: _EditUserForm(student: _detail ?? widget.student),
+    );
+
+    if (saved == true) {
+      widget.onEdited();
+      await _load(); // refresh this detail view in place
+      if (mounted) showAdSnack(context, 'Informations mises à jour.');
     }
   }
 
@@ -416,6 +433,10 @@ class _StudentDetailContentState extends State<_StudentDetailContent> {
           const SizedBox(height: 16),
           _xpProgressionSection(s['xpProgression'] as List<dynamic>?),
           const SizedBox(height: 18),
+          Row(children: [
+            Expanded(child: AdBtn(label: '✏️ Modifier les informations', small: true, variant: AdBtnVariant.ghost, onPressed: _editUser)),
+          ]),
+          const SizedBox(height: 8),
           Row(children: [
             Expanded(child: AdBtn(label: '📩 Envoyer message', variant: AdBtnVariant.secondary, onPressed: _openMessageComposer)),
             const SizedBox(width: 10),
@@ -559,6 +580,79 @@ class _MessageComposerState extends State<_MessageComposer> {
         AdField(label: 'Message', controller: _messageController, maxLines: 5),
         const SizedBox(height: 4),
         AdBtn(label: 'Envoyer', full: true, loading: _sending, onPressed: _send),
+      ],
+    );
+  }
+}
+
+class _EditUserForm extends StatefulWidget {
+  final Map<String, dynamic> student;
+  const _EditUserForm({required this.student});
+
+  @override
+  State<_EditUserForm> createState() => _EditUserFormState();
+}
+
+class _EditUserFormState extends State<_EditUserForm> {
+  late final TextEditingController _nom;
+  late final TextEditingController _prenom;
+  late final TextEditingController _ecole;
+  late String _filiere;
+  bool _saving = false;
+
+  static const _filieres = ['MP', 'PC', 'TSI', 'BIO', 'TECHNO'];
+
+  @override
+  void initState() {
+    super.initState();
+    _nom = TextEditingController(text: '${widget.student['nom'] ?? ''}');
+    _prenom = TextEditingController(text: '${widget.student['prenom'] ?? ''}');
+    _ecole = TextEditingController(text: '${widget.student['ecole'] ?? ''}');
+    final currentFiliere = '${widget.student['filiere'] ?? ''}';
+    _filiere = _filieres.contains(currentFiliere) ? currentFiliere : _filieres.first;
+  }
+
+  @override
+  void dispose() {
+    _nom.dispose();
+    _prenom.dispose();
+    _ecole.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_nom.text.trim().isEmpty || _prenom.text.trim().isEmpty) {
+      showAdSnack(context, 'Nom et prénom sont requis.', error: true);
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await ApiClient.updateAdminUser(widget.student['id'], {
+        'nom': _nom.text.trim(),
+        'prenom': _prenom.text.trim(),
+        'ecole': _ecole.text.trim(),
+        'filiere': _filiere,
+      });
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _saving = false);
+        showAdSnack(context, "Échec de l'enregistrement.", error: true);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AdField(label: 'Nom', controller: _nom),
+        AdField(label: 'Prénom', controller: _prenom),
+        AdField(label: 'École', controller: _ecole),
+        AdDropdown(label: 'Filière', value: _filiere, options: _filieres, onChanged: (v) => setState(() => _filiere = v!)),
+        const SizedBox(height: 4),
+        AdBtn(label: 'Enregistrer', full: true, loading: _saving, onPressed: _save),
       ],
     );
   }

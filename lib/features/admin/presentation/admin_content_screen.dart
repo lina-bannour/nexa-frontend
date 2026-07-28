@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/nexa_theme.dart';
+import '../../../widgets/latex_text.dart';
 import '../widgets/admin_widgets.dart';
 
 class AdminContentScreen extends StatefulWidget {
@@ -356,6 +357,37 @@ class _ExerciseFormContentState extends State<_ExerciseFormContent> {
     }
   }
 
+  /// Live preview of `$...$` / `$$...$$` LaTeX as the admin types, so they
+  /// can catch broken formulas before saving — students already see this
+  /// rendering when solving the exercise (see widgets/latex_text.dart).
+  Widget _latexPreview(TextEditingController controller) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final text = controller.text.trim();
+        if (text.isEmpty || (!text.contains(r'$'))) return const SizedBox(height: 10);
+        return Container(
+          margin: const EdgeInsets.only(top: 6, bottom: 10),
+          padding: const EdgeInsets.all(10),
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: NexaColors.bg,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: NexaColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('APERÇU', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: NexaColors.txt3, letterSpacing: 0.6)),
+              const SizedBox(height: 6),
+              LatexText(text, style: const TextStyle(fontSize: 13, color: NexaColors.txt)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -365,8 +397,13 @@ class _ExerciseFormContentState extends State<_ExerciseFormContent> {
         AdDropdown(label: 'Matière', value: _matiere, options: const ['MATHEMATIQUES', 'PHYSIQUE', 'SCIENCES_INGENIEUR', 'AUTRE'], onChanged: (v) => setState(() => _matiere = v!)),
         AdDropdown(label: 'Difficulté', value: _difficulte, options: const ['UN_ETOILE', 'DEUX_ETOILES', 'TROIS_ETOILES'], onChanged: (v) => setState(() => _difficulte = v!)),
         AdField(label: 'XP de base', controller: _xp, keyboardType: TextInputType.number),
+        const Text("Formules : entourez de \$...\$ (en ligne) ou \$\$...\$\$ (bloc) — ex. \$x^2 + 1\$",
+          style: TextStyle(fontSize: 10, color: NexaColors.txt3, fontStyle: FontStyle.italic)),
+        const SizedBox(height: 6),
         AdField(label: 'Énoncé', controller: _enonce, maxLines: 3),
+        _latexPreview(_enonce),
         AdField(label: 'Solution détaillée', controller: _solution, maxLines: 3),
+        _latexPreview(_solution),
         AdField(label: 'Indice 1 (optionnel)', controller: _hint1),
         AdField(label: 'Indice 2 (optionnel)', controller: _hint2),
         const Text('RÉPONSE ATTENDUE (TEXTE LIBRE, OPTIONNEL)',
