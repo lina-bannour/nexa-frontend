@@ -314,6 +314,10 @@ static Future<Map<String, dynamic>> checkContestTextAnswer(
     return res.data;
   }
 
+  static Future<void> sendAdminMessage(String id, String subject, String message) async {
+    await _dio.post('/admin/users/$id/message', data: {'subject': subject, 'message': message});
+  }
+
   static Future<List<dynamic>> getAdminExercises() async {
     final res = await _dio.get('/admin/content/exercises');
     return res.data;
