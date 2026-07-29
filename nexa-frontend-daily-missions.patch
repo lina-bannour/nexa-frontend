@@ -1,0 +1,186 @@
+From cf2861cb375fe2e9cf5a1e0897a40b9e69e99ef8 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Wed, 29 Jul 2026 11:07:35 +0000
+Subject: [PATCH] feat(profile): add 'Missions du jour' section above
+ Progression
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- New card matching the provided mockup: daily missions with their XP
+  reward shown (+30/+15/+50 XP), green highlight + checkmark once
+  completed today
+- Backed by the new GET /users/me/daily-missions endpoint
+- 'Utiliser l'IA NEXA' shown as 'Bientôt' here too (frontend-only,
+  since the backend doesn't return it) for consistency with how the
+  Progression checklist already handles that not-yet-built feature
+- This is intentionally a separate section from Progression: Missions
+  du jour resets daily, Progression is lifetime — matches the two
+  reference screenshots
+---
+ lib/core/api/api_client.dart                  |   5 +
+ .../home/presentation/profile_screen.dart     | 108 ++++++++++++++++++
+ 2 files changed, 113 insertions(+)
+
+diff --git a/lib/core/api/api_client.dart b/lib/core/api/api_client.dart
+index d81befe..5e40a58 100644
+--- a/lib/core/api/api_client.dart
++++ b/lib/core/api/api_client.dart
+@@ -122,6 +122,11 @@ class ApiClient {
+     return res.data;
+   }
+ 
++  static Future<List<dynamic>> getDailyMissions() async {
++    final res = await _dio.get('/users/me/daily-missions');
++    return res.data['missions'] ?? [];
++  }
++
+   static Map<String, dynamic>? get cachedProfile => _cachedProfile;
+ 
+   // EXERCISES
+diff --git a/lib/features/home/presentation/profile_screen.dart b/lib/features/home/presentation/profile_screen.dart
+index 5a0b026..cc2edbb 100644
+--- a/lib/features/home/presentation/profile_screen.dart
++++ b/lib/features/home/presentation/profile_screen.dart
+@@ -16,6 +16,7 @@ class ProfileScreen extends StatefulWidget {
+ class _ProfileScreenState extends State<ProfileScreen> {
+   Map<String, dynamic>? _profile;
+   int? _rank;
++  List<dynamic> _dailyMissions = [];
+   bool _loading = true;
+ 
+   @override
+@@ -36,9 +37,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
+         // Le rang est une info secondaire — son échec ne doit pas empêcher
+         // d'afficher le reste du profil.
+       }
++      List<dynamic> missions = [];
++      try {
++        missions = await ApiClient.getDailyMissions();
++      } catch (_) {
++        // Idem pour les missions du jour — non bloquant.
++      }
+       setState(() {
+         _profile = p;
+         _rank = rank;
++        _dailyMissions = missions;
+         _loading = false;
+       });
+     } catch (e) {
+@@ -233,6 +241,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
+             ),
+             const SizedBox(height: 24),
+ 
++            // Missions du jour (reset daily, distinct from Progression below)
++            _buildDailyMissionsSection(),
++            const SizedBox(height: 24),
++
+             // Progression Section (checklist + rank ladder)
+             _buildProgressionSection(),
+             const SizedBox(height: 24),
+@@ -279,6 +291,102 @@ class _ProfileScreenState extends State<ProfileScreen> {
+     );
+   }
+ 
++  Widget _buildDailyMissionsSection() {
++    // "Utiliser l'IA NEXA" isn't returned by the backend (that feature
++    // doesn't exist yet — see the note in the Progression checklist below),
++    // so it's added here purely for display, always shown as "Bientôt"
++    // and never completable, for consistency with that section.
++    final missions = [
++      ..._dailyMissions,
++      {'key': 'AI', 'label': "Utiliser l'IA NEXA", 'xp': 10, 'completed': false, 'comingSoon': true},
++    ];
++
++    return Container(
++      padding: const EdgeInsets.all(16),
++      decoration: BoxDecoration(
++        color: Colors.white,
++        borderRadius: BorderRadius.circular(16),
++        border: Border.all(color: NexaColors.border),
++        boxShadow: [
++          BoxShadow(
++            color: Colors.black.withOpacity(0.02),
++            blurRadius: 10,
++            offset: const Offset(0, 4),
++          )
++        ],
++      ),
++      child: Column(
++        crossAxisAlignment: CrossAxisAlignment.start,
++        children: [
++          const Row(children: [
++            Text('🎯 ', style: TextStyle(fontSize: 13)),
++            Text(
++              'MISSIONS DU JOUR',
++              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: NexaColors.txt3, letterSpacing: 1),
++            ),
++          ]),
++          const SizedBox(height: 12),
++          ...missions.map((m) => _dailyMissionRow(
++                icon: _missionIcon('${m['key']}'),
++                label: '${m['label']}',
++                xp: (m['xp'] ?? 0) as int,
++                completed: m['completed'] == true,
++                comingSoon: m['comingSoon'] == true,
++              )),
++        ],
++      ),
++    );
++  }
++
++  String _missionIcon(String key) {
++    switch (key) {
++      case 'EXERCISES': return '📝';
++      case 'FORUM': return '💬';
++      case 'CONTEST': return '🏁';
++      case 'AI': return '🤖';
++      default: return '🎯';
++    }
++  }
++
++  Widget _dailyMissionRow({required String icon, required String label, required int xp, required bool completed, bool comingSoon = false}) {
++    return Container(
++      margin: const EdgeInsets.only(bottom: 8),
++      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
++      decoration: BoxDecoration(
++        color: completed ? NexaColors.green.withOpacity(0.08) : (comingSoon ? NexaColors.bg : Colors.white),
++        borderRadius: BorderRadius.circular(10),
++        border: Border.all(color: completed ? NexaColors.green.withOpacity(0.25) : NexaColors.border),
++      ),
++      child: Row(
++        children: [
++          Text(icon, style: const TextStyle(fontSize: 15)),
++          const SizedBox(width: 10),
++          Expanded(
++            child: Text(
++              label,
++              style: TextStyle(
++                fontSize: 13,
++                fontWeight: FontWeight.w600,
++                color: comingSoon ? NexaColors.txt3 : NexaColors.txt,
++              ),
++            ),
++          ),
++          if (comingSoon)
++            const Text('Bientôt', style: TextStyle(fontSize: 10, color: NexaColors.txt3, fontStyle: FontStyle.italic))
++          else Row(
++            children: [
++              Text('+$xp XP', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: completed ? NexaColors.green : NexaColors.gold)),
++              if (completed) ...[
++                const SizedBox(width: 4),
++                const Icon(Icons.check_circle, size: 15, color: NexaColors.green),
++              ],
++            ],
++          ),
++        ],
++      ),
++    );
++  }
++
+   Widget _buildProgressionSection() {
+     final xp = _profile?['xpTotal'] ?? 0;
+     final attempts = _profile?['_count']?['attempts'] ?? 0;
+-- 
+2.43.0
+
