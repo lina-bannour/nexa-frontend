@@ -127,6 +127,11 @@ class ApiClient {
     return res.data['missions'] ?? [];
   }
 
+  static Future<Map<String, dynamic>> getBareme() async {
+    final res = await _dio.get('/settings/bareme');
+    return res.data;
+  }
+
   static Map<String, dynamic>? get cachedProfile => _cachedProfile;
 
   // EXERCISES
