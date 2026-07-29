@@ -16,6 +16,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   Map<String, dynamic>? _profile;
   int? _rank;
+  List<dynamic> _dailyMissions = [];
   bool _loading = true;
 
   @override
@@ -36,9 +37,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
         // Le rang est une info secondaire — son échec ne doit pas empêcher
         // d'afficher le reste du profil.
       }
+      List<dynamic> missions = [];
+      try {
+        missions = await ApiClient.getDailyMissions();
+      } catch (_) {
+        // Idem pour les missions du jour — non bloquant.
+      }
       setState(() {
         _profile = p;
         _rank = rank;
+        _dailyMissions = missions;
         _loading = false;
       });
     } catch (e) {
@@ -233,6 +241,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 24),
 
+            // Missions du jour (reset daily, distinct from Progression below)
+            _buildDailyMissionsSection(),
+            const SizedBox(height: 24),
+
             // Progression Section (checklist + rank ladder)
             _buildProgressionSection(),
             const SizedBox(height: 24),
@@ -275,6 +287,102 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildDailyMissionsSection() {
+    // "Utiliser l'IA NEXA" isn't returned by the backend (that feature
+    // doesn't exist yet — see the note in the Progression checklist below),
+    // so it's added here purely for display, always shown as "Bientôt"
+    // and never completable, for consistency with that section.
+    final missions = [
+      ..._dailyMissions,
+      {'key': 'AI', 'label': "Utiliser l'IA NEXA", 'xp': 10, 'completed': false, 'comingSoon': true},
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: NexaColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          )
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(children: [
+            Text('🎯 ', style: TextStyle(fontSize: 13)),
+            Text(
+              'MISSIONS DU JOUR',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: NexaColors.txt3, letterSpacing: 1),
+            ),
+          ]),
+          const SizedBox(height: 12),
+          ...missions.map((m) => _dailyMissionRow(
+                icon: _missionIcon('${m['key']}'),
+                label: '${m['label']}',
+                xp: (m['xp'] ?? 0) as int,
+                completed: m['completed'] == true,
+                comingSoon: m['comingSoon'] == true,
+              )),
+        ],
+      ),
+    );
+  }
+
+  String _missionIcon(String key) {
+    switch (key) {
+      case 'EXERCISES': return '📝';
+      case 'FORUM': return '💬';
+      case 'CONTEST': return '🏁';
+      case 'AI': return '🤖';
+      default: return '🎯';
+    }
+  }
+
+  Widget _dailyMissionRow({required String icon, required String label, required int xp, required bool completed, bool comingSoon = false}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: completed ? NexaColors.green.withOpacity(0.08) : (comingSoon ? NexaColors.bg : Colors.white),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: completed ? NexaColors.green.withOpacity(0.25) : NexaColors.border),
+      ),
+      child: Row(
+        children: [
+          Text(icon, style: const TextStyle(fontSize: 15)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: comingSoon ? NexaColors.txt3 : NexaColors.txt,
+              ),
+            ),
+          ),
+          if (comingSoon)
+            const Text('Bientôt', style: TextStyle(fontSize: 10, color: NexaColors.txt3, fontStyle: FontStyle.italic))
+          else Row(
+            children: [
+              Text('+$xp XP', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: completed ? NexaColors.green : NexaColors.gold)),
+              if (completed) ...[
+                const SizedBox(width: 4),
+                const Icon(Icons.check_circle, size: 15, color: NexaColors.green),
+              ],
+            ],
+          ),
+        ],
       ),
     );
   }

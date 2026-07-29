@@ -122,6 +122,11 @@ class ApiClient {
     return res.data;
   }
 
+  static Future<List<dynamic>> getDailyMissions() async {
+    final res = await _dio.get('/users/me/daily-missions');
+    return res.data['missions'] ?? [];
+  }
+
   static Map<String, dynamic>? get cachedProfile => _cachedProfile;
 
   // EXERCISES
