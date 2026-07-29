@@ -3,6 +3,7 @@ import '../../../core/api/api_client.dart';
 import '../../../core/theme/nexa_theme.dart';
 import '../../../widgets/shared_widgets.dart';
 import '../../../widgets/latex_text.dart';
+import 'contest_photo_submission_screen.dart';
 
 class ConcoursScreen extends StatefulWidget {
   const ConcoursScreen({super.key});
@@ -17,6 +18,7 @@ class _ConcoursScreenState extends State<ConcoursScreen> {
   String? _selectedFiliere;
   Map<String, dynamic>? _activeContest;
   Map<String, dynamic>? _activeSession;
+  String? _mode; // 'qcm' | 'photo'
   int _currentQuestionIndex = 0;
   bool _loadingDetail = false;
 
@@ -48,6 +50,90 @@ class _ConcoursScreenState extends State<ConcoursScreen> {
     }
   }
 
+  // Tapping a contest offers two ways to solve it: the interactive QCM
+  // (existing flow), or solve on paper + submit a photo (new — the actual
+  // review/grading of the photo is separate future work).
+  Future<void> _chooseMode(Map<String, dynamic> contest) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${contest['titre'] ?? 'Concours'}',
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: NexaColors.txt)),
+              const SizedBox(height: 4),
+              const Text('Comment voulez-vous résoudre ce concours ?',
+                style: TextStyle(fontSize: 13, color: NexaColors.txt3)),
+              const SizedBox(height: 18),
+              _modeOption(
+                icon: '🖥️',
+                title: 'QCM interactif',
+                subtitle: 'Répondez directement dans l\'app, avec indices et correction instantanée.',
+                onTap: () => Navigator.of(ctx).pop('qcm'),
+              ),
+              const SizedBox(height: 10),
+              _modeOption(
+                icon: '📷',
+                title: 'Résoudre sur papier',
+                subtitle: 'Téléchargez le sujet officiel, résolvez sur copie, puis envoyez une photo de votre travail.',
+                onTap: () => Navigator.of(ctx).pop('photo'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (choice == 'qcm') {
+      await _openContest(contest['id']);
+    } else if (choice == 'photo') {
+      setState(() {
+        _activeContest = contest;
+        _mode = 'photo';
+      });
+    }
+  }
+
+  Widget _modeOption({required String icon, required String title, required String subtitle, required VoidCallback onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: NexaColors.bg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: NexaColors.border),
+        ),
+        child: Row(
+          children: [
+            Text(icon, style: const TextStyle(fontSize: 26)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: NexaColors.txt)),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: const TextStyle(fontSize: 11.5, color: NexaColors.txt3)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: NexaColors.txt3),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _openContest(String id) async {
     setState(() => _loadingDetail = true);
     try {
@@ -56,6 +142,7 @@ class _ConcoursScreenState extends State<ConcoursScreen> {
       setState(() {
         _activeContest = contest;
         _activeSession = session;
+        _mode = 'qcm';
         _currentQuestionIndex = (session['questionsCompleted'] ?? 0);
       });
     } catch (e) {
@@ -69,6 +156,7 @@ class _ConcoursScreenState extends State<ConcoursScreen> {
   void _back() => setState(() {
     _activeContest = null;
     _activeSession = null;
+    _mode = null;
     _currentQuestionIndex = 0;
     _load();
   });
@@ -86,6 +174,12 @@ class _ConcoursScreenState extends State<ConcoursScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_activeContest != null && _mode == 'photo') {
+      return ContestPhotoSubmissionScreen(
+        contest: _activeContest!,
+        onBack: _back,
+      );
+    }
     if (_activeContest != null && _activeSession != null) {
       return ContestSessionView(
         contest: _activeContest!,
@@ -163,7 +257,7 @@ class _ConcoursScreenState extends State<ConcoursScreen> {
                           return Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: NexaCard(
-                            onTap: () => _openContest(c['id']),
+                            onTap: () => _chooseMode(c),
                             child: Row(children: [
                               Container(
                                 width: 50, height: 50,

@@ -187,6 +187,17 @@ static Future<Map<String, dynamic>> startContestSession(String contestId) async 
   return res.data;
 }
 
+// "Solve on paper, submit a photo" mode — alternative to the QCM.
+static Future<Map<String, dynamic>> submitContestPhoto(String contestId, String imageBase64) async {
+  final res = await _dio.post('/contests/$contestId/photo-submissions', data: {'imageBase64': imageBase64});
+  return res.data;
+}
+
+static Future<Map<String, dynamic>?> getMyContestPhotoSubmission(String contestId) async {
+  final res = await _dio.get('/contests/$contestId/photo-submissions/me');
+  return res.data as Map<String, dynamic>?;
+}
+
 static Future<Map<String, dynamic>> submitContestAnswer(
   String sessionId, String questionId, String choiceId, int hintsUsed) async {
   final res = await _dio.post(
