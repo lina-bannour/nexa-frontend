@@ -1,0 +1,558 @@
+From 21ded065fe4a6c09e4e2be77c63949dac2999282 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Wed, 29 Jul 2026 06:07:32 +0000
+Subject: [PATCH] feat(contests): mode picker (QCM vs solve-on-paper + photo) +
+ official subject link
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Tapping a contest now opens a bottom sheet: 'QCM interactif' (existing
+  flow, unchanged) or 'Résoudre sur papier' (new)
+- New ContestPhotoSubmissionScreen: links out to the official subject
+  archive (concours-ingenieurs.rnu.tn/epreuves, the DGET/MESRS portal
+  for the Tunisian national engineering entrance exams, deep-linked by
+  année), lets the student photograph their paper-solved work (camera
+  or gallery via image_picker), and submits it via the new backend
+  endpoint. Shows a 'pending review' status once submitted.
+- Added image_picker + url_launcher deps, camera/photo-library usage
+  strings in Info.plist, CAMERA permission in AndroidManifest.xml
+- Explicitly out of scope here (per request): reviewing/grading the
+  submitted photos — that's a separate admin-side workflow
+---
+ android/app/src/main/AndroidManifest.xml      |   2 +
+ ios/Runner/Info.plist                         |   4 +
+ lib/core/api/api_client.dart                  |  11 +
+ .../presentation/concours_screen.dart         |  96 +++++-
+ .../contest_photo_submission_screen.dart      | 308 ++++++++++++++++++
+ pubspec.yaml                                  |   2 +
+ 6 files changed, 422 insertions(+), 1 deletion(-)
+ create mode 100644 lib/features/contests/presentation/contest_photo_submission_screen.dart
+
+diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
+index d7ae29f..013307c 100644
+--- a/android/app/src/main/AndroidManifest.xml
++++ b/android/app/src/main/AndroidManifest.xml
+@@ -1,4 +1,6 @@
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android">
++    <uses-permission android:name="android.permission.CAMERA"/>
++    <uses-feature android:name="android.hardware.camera" android:required="false"/>
+     <application
+         android:label="nexa_app"
+         android:name="${applicationName}"
+diff --git a/ios/Runner/Info.plist b/ios/Runner/Info.plist
+index 9453284..0a70165 100644
+--- a/ios/Runner/Info.plist
++++ b/ios/Runner/Info.plist
+@@ -49,6 +49,10 @@
+ 	</dict>
+ 	<key>UIApplicationSupportsIndirectInputEvents</key>
+ 	<true/>
++	<key>NSCameraUsageDescription</key>
++	<string>NEXA a besoin de la caméra pour photographier votre copie de concours.</string>
++	<key>NSPhotoLibraryUsageDescription</key>
++	<string>NEXA a besoin d'accéder à vos photos pour envoyer votre copie de concours.</string>
+ 	<key>UILaunchStoryboardName</key>
+ 	<string>LaunchScreen</string>
+ 	<key>UIMainStoryboardFile</key>
+diff --git a/lib/core/api/api_client.dart b/lib/core/api/api_client.dart
+index ef9923d..d81befe 100644
+--- a/lib/core/api/api_client.dart
++++ b/lib/core/api/api_client.dart
+@@ -187,6 +187,17 @@ static Future<Map<String, dynamic>> startContestSession(String contestId) async
+   return res.data;
+ }
+ 
++// "Solve on paper, submit a photo" mode — alternative to the QCM.
++static Future<Map<String, dynamic>> submitContestPhoto(String contestId, String imageBase64) async {
++  final res = await _dio.post('/contests/$contestId/photo-submissions', data: {'imageBase64': imageBase64});
++  return res.data;
++}
++
++static Future<Map<String, dynamic>?> getMyContestPhotoSubmission(String contestId) async {
++  final res = await _dio.get('/contests/$contestId/photo-submissions/me');
++  return res.data as Map<String, dynamic>?;
++}
++
+ static Future<Map<String, dynamic>> submitContestAnswer(
+   String sessionId, String questionId, String choiceId, int hintsUsed) async {
+   final res = await _dio.post(
+diff --git a/lib/features/contests/presentation/concours_screen.dart b/lib/features/contests/presentation/concours_screen.dart
+index ec6f4d1..a2ebc15 100644
+--- a/lib/features/contests/presentation/concours_screen.dart
++++ b/lib/features/contests/presentation/concours_screen.dart
+@@ -3,6 +3,7 @@ import '../../../core/api/api_client.dart';
+ import '../../../core/theme/nexa_theme.dart';
+ import '../../../widgets/shared_widgets.dart';
+ import '../../../widgets/latex_text.dart';
++import 'contest_photo_submission_screen.dart';
+ 
+ class ConcoursScreen extends StatefulWidget {
+   const ConcoursScreen({super.key});
+@@ -17,6 +18,7 @@ class _ConcoursScreenState extends State<ConcoursScreen> {
+   String? _selectedFiliere;
+   Map<String, dynamic>? _activeContest;
+   Map<String, dynamic>? _activeSession;
++  String? _mode; // 'qcm' | 'photo'
+   int _currentQuestionIndex = 0;
+   bool _loadingDetail = false;
+ 
+@@ -48,6 +50,90 @@ class _ConcoursScreenState extends State<ConcoursScreen> {
+     }
+   }
+ 
++  // Tapping a contest offers two ways to solve it: the interactive QCM
++  // (existing flow), or solve on paper + submit a photo (new — the actual
++  // review/grading of the photo is separate future work).
++  Future<void> _chooseMode(Map<String, dynamic> contest) async {
++    final choice = await showModalBottomSheet<String>(
++      context: context,
++      backgroundColor: Colors.white,
++      shape: const RoundedRectangleBorder(
++        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
++      ),
++      builder: (ctx) => SafeArea(
++        child: Padding(
++          padding: const EdgeInsets.all(20),
++          child: Column(
++            mainAxisSize: MainAxisSize.min,
++            crossAxisAlignment: CrossAxisAlignment.start,
++            children: [
++              Text('${contest['titre'] ?? 'Concours'}',
++                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: NexaColors.txt)),
++              const SizedBox(height: 4),
++              const Text('Comment voulez-vous résoudre ce concours ?',
++                style: TextStyle(fontSize: 13, color: NexaColors.txt3)),
++              const SizedBox(height: 18),
++              _modeOption(
++                icon: '🖥️',
++                title: 'QCM interactif',
++                subtitle: 'Répondez directement dans l\'app, avec indices et correction instantanée.',
++                onTap: () => Navigator.of(ctx).pop('qcm'),
++              ),
++              const SizedBox(height: 10),
++              _modeOption(
++                icon: '📷',
++                title: 'Résoudre sur papier',
++                subtitle: 'Téléchargez le sujet officiel, résolvez sur copie, puis envoyez une photo de votre travail.',
++                onTap: () => Navigator.of(ctx).pop('photo'),
++              ),
++            ],
++          ),
++        ),
++      ),
++    );
++
++    if (choice == 'qcm') {
++      await _openContest(contest['id']);
++    } else if (choice == 'photo') {
++      setState(() {
++        _activeContest = contest;
++        _mode = 'photo';
++      });
++    }
++  }
++
++  Widget _modeOption({required String icon, required String title, required String subtitle, required VoidCallback onTap}) {
++    return InkWell(
++      onTap: onTap,
++      borderRadius: BorderRadius.circular(14),
++      child: Container(
++        padding: const EdgeInsets.all(14),
++        decoration: BoxDecoration(
++          color: NexaColors.bg,
++          borderRadius: BorderRadius.circular(14),
++          border: Border.all(color: NexaColors.border),
++        ),
++        child: Row(
++          children: [
++            Text(icon, style: const TextStyle(fontSize: 26)),
++            const SizedBox(width: 12),
++            Expanded(
++              child: Column(
++                crossAxisAlignment: CrossAxisAlignment.start,
++                children: [
++                  Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: NexaColors.txt)),
++                  const SizedBox(height: 2),
++                  Text(subtitle, style: const TextStyle(fontSize: 11.5, color: NexaColors.txt3)),
++                ],
++              ),
++            ),
++            const Icon(Icons.chevron_right, color: NexaColors.txt3),
++          ],
++        ),
++      ),
++    );
++  }
++
+   Future<void> _openContest(String id) async {
+     setState(() => _loadingDetail = true);
+     try {
+@@ -56,6 +142,7 @@ class _ConcoursScreenState extends State<ConcoursScreen> {
+       setState(() {
+         _activeContest = contest;
+         _activeSession = session;
++        _mode = 'qcm';
+         _currentQuestionIndex = (session['questionsCompleted'] ?? 0);
+       });
+     } catch (e) {
+@@ -69,6 +156,7 @@ class _ConcoursScreenState extends State<ConcoursScreen> {
+   void _back() => setState(() {
+     _activeContest = null;
+     _activeSession = null;
++    _mode = null;
+     _currentQuestionIndex = 0;
+     _load();
+   });
+@@ -86,6 +174,12 @@ class _ConcoursScreenState extends State<ConcoursScreen> {
+ 
+   @override
+   Widget build(BuildContext context) {
++    if (_activeContest != null && _mode == 'photo') {
++      return ContestPhotoSubmissionScreen(
++        contest: _activeContest!,
++        onBack: _back,
++      );
++    }
+     if (_activeContest != null && _activeSession != null) {
+       return ContestSessionView(
+         contest: _activeContest!,
+@@ -163,7 +257,7 @@ class _ConcoursScreenState extends State<ConcoursScreen> {
+                           return Padding(
+                           padding: const EdgeInsets.only(bottom: 10),
+                           child: NexaCard(
+-                            onTap: () => _openContest(c['id']),
++                            onTap: () => _chooseMode(c),
+                             child: Row(children: [
+                               Container(
+                                 width: 50, height: 50,
+diff --git a/lib/features/contests/presentation/contest_photo_submission_screen.dart b/lib/features/contests/presentation/contest_photo_submission_screen.dart
+new file mode 100644
+index 0000000..1affde4
+--- /dev/null
++++ b/lib/features/contests/presentation/contest_photo_submission_screen.dart
+@@ -0,0 +1,308 @@
++import 'dart:convert';
++import 'dart:io';
++import 'package:flutter/material.dart';
++import 'package:image_picker/image_picker.dart';
++import 'package:url_launcher/url_launcher.dart';
++import '../../../core/api/api_client.dart';
++import '../../../core/theme/nexa_theme.dart';
++import '../../../widgets/shared_widgets.dart';
++
++/// "Solve on paper, submit a photo" mode — alternative to the interactive
++/// QCM. The student downloads/consults the official subject, solves it on
++/// paper, then photographs their work and sends it here.
++///
++/// NOTE: this screen only gets the photo captured and uploaded. Reviewing
++/// and grading submitted photos (an admin-side workflow) is separate future
++/// work, not built here — submissions just sit as PENDING until then.
++class ContestPhotoSubmissionScreen extends StatefulWidget {
++  final Map<String, dynamic> contest;
++  final VoidCallback onBack;
++  const ContestPhotoSubmissionScreen({super.key, required this.contest, required this.onBack});
++
++  @override
++  State<ContestPhotoSubmissionScreen> createState() => _ContestPhotoSubmissionScreenState();
++}
++
++class _ContestPhotoSubmissionScreenState extends State<ContestPhotoSubmissionScreen> {
++  bool _loading = true;
++  bool _submitting = false;
++  Map<String, dynamic>? _existingSubmission;
++  File? _pickedImage;
++
++  @override
++  void initState() {
++    super.initState();
++    _checkExisting();
++  }
++
++  Future<void> _checkExisting() async {
++    try {
++      final sub = await ApiClient.getMyContestPhotoSubmission(widget.contest['id']);
++      if (mounted) setState(() => _existingSubmission = sub);
++    } catch (_) {
++      // No submission yet, or the request failed — treat as "not submitted".
++    } finally {
++      if (mounted) setState(() => _loading = false);
++    }
++  }
++
++  String get _officialSubjectUrl {
++    final annee = widget.contest['annee'];
++    // Portail officiel des concours nationaux d'ingénieurs (DGET / MESRS).
++    return 'https://concours-ingenieurs.rnu.tn/epreuves?annee=$annee';
++  }
++
++  Future<void> _openOfficialSubject() async {
++    final uri = Uri.parse(_officialSubjectUrl);
++    try {
++      await launchUrl(uri, mode: LaunchMode.externalApplication);
++    } catch (_) {
++      if (mounted) {
++        ScaffoldMessenger.of(context).showSnackBar(
++          const SnackBar(content: Text("Impossible d'ouvrir le lien.")));
++      }
++    }
++  }
++
++  Future<void> _pickImage(ImageSource source) async {
++    try {
++      final picked = await ImagePicker().pickImage(source: source, imageQuality: 85);
++      if (picked != null) setState(() => _pickedImage = File(picked.path));
++    } catch (_) {
++      if (mounted) {
++        ScaffoldMessenger.of(context).showSnackBar(
++          const SnackBar(content: Text("Impossible d'accéder à l'image.")));
++      }
++    }
++  }
++
++  void _showPickerOptions() {
++    showModalBottomSheet(
++      context: context,
++      backgroundColor: Colors.white,
++      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
++      builder: (ctx) => SafeArea(
++        child: Column(
++          mainAxisSize: MainAxisSize.min,
++          children: [
++            ListTile(
++              leading: const Icon(Icons.photo_camera_outlined, color: NexaColors.blue),
++              title: const Text('Prendre une photo'),
++              onTap: () { Navigator.pop(ctx); _pickImage(ImageSource.camera); },
++            ),
++            ListTile(
++              leading: const Icon(Icons.photo_library_outlined, color: NexaColors.blue),
++              title: const Text('Choisir depuis la galerie'),
++              onTap: () { Navigator.pop(ctx); _pickImage(ImageSource.gallery); },
++            ),
++          ],
++        ),
++      ),
++    );
++  }
++
++  Future<void> _submit() async {
++    if (_pickedImage == null) return;
++    setState(() => _submitting = true);
++    try {
++      final bytes = await _pickedImage!.readAsBytes();
++      final base64Image = base64Encode(bytes);
++      final submission = await ApiClient.submitContestPhoto(widget.contest['id'], base64Image);
++      if (mounted) setState(() => _existingSubmission = submission);
++    } catch (_) {
++      if (mounted) {
++        ScaffoldMessenger.of(context).showSnackBar(
++          const SnackBar(content: Text("Échec de l'envoi. Réessayez.")));
++      }
++    } finally {
++      if (mounted) setState(() => _submitting = false);
++    }
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    final contest = widget.contest;
++    return Scaffold(
++      backgroundColor: NexaColors.bg,
++      body: SafeArea(
++        child: Column(
++          crossAxisAlignment: CrossAxisAlignment.start,
++          children: [
++            Padding(
++              padding: const EdgeInsets.all(16),
++              child: Row(children: [
++                IconButton(icon: const Icon(Icons.arrow_back), onPressed: widget.onBack),
++                Expanded(
++                  child: Column(
++                    crossAxisAlignment: CrossAxisAlignment.start,
++                    children: [
++                      Text('${contest['titre'] ?? 'Concours'}',
++                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: NexaColors.txt),
++                        overflow: TextOverflow.ellipsis),
++                      const Text('Résoudre sur papier',
++                        style: TextStyle(fontSize: 12, color: NexaColors.txt3)),
++                    ],
++                  ),
++                ),
++              ]),
++            ),
++            Expanded(
++              child: _loading
++                ? const Center(child: CircularProgressIndicator(color: NexaColors.blue))
++                : ListView(
++                    padding: const EdgeInsets.symmetric(horizontal: 16),
++                    children: [
++                      _officialSubjectCard(),
++                      const SizedBox(height: 16),
++                      if (_existingSubmission != null)
++                        _submissionStatusCard(_existingSubmission!)
++                      else
++                        _uploadSection(),
++                    ],
++                  ),
++            ),
++          ],
++        ),
++      ),
++    );
++  }
++
++  Widget _officialSubjectCard() {
++    return NexaCard(
++      onTap: _openOfficialSubject,
++      child: Row(
++        children: [
++          Container(
++            width: 44, height: 44,
++            decoration: BoxDecoration(color: NexaColors.blueLight, borderRadius: BorderRadius.circular(12)),
++            alignment: Alignment.center,
++            child: const Text('📄', style: TextStyle(fontSize: 20)),
++          ),
++          const SizedBox(width: 12),
++          const Expanded(
++            child: Column(
++              crossAxisAlignment: CrossAxisAlignment.start,
++              children: [
++                Text('Voir le sujet officiel', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: NexaColors.txt)),
++                SizedBox(height: 2),
++                Text('Portail des concours nationaux d\'ingénieurs (DGET)',
++                  style: TextStyle(fontSize: 11.5, color: NexaColors.txt3)),
++              ],
++            ),
++          ),
++          const Icon(Icons.open_in_new, size: 18, color: NexaColors.blue),
++        ],
++      ),
++    );
++  }
++
++  Widget _uploadSection() {
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.start,
++      children: [
++        const Text('Envoyez une photo de votre copie',
++          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: NexaColors.txt)),
++        const SizedBox(height: 4),
++        const Text('Une fois le sujet résolu sur papier, prenez une photo claire et lisible de votre travail.',
++          style: TextStyle(fontSize: 12.5, color: NexaColors.txt3)),
++        const SizedBox(height: 14),
++
++        GestureDetector(
++          onTap: _showPickerOptions,
++          child: Container(
++            width: double.infinity,
++            height: _pickedImage != null ? 260 : 160,
++            decoration: BoxDecoration(
++              color: Colors.white,
++              borderRadius: BorderRadius.circular(14),
++              border: Border.all(color: NexaColors.border, style: BorderStyle.solid),
++            ),
++            clipBehavior: Clip.antiAlias,
++            child: _pickedImage != null
++              ? Stack(fit: StackFit.expand, children: [
++                  Image.file(_pickedImage!, fit: BoxFit.cover),
++                  Positioned(
++                    right: 8, top: 8,
++                    child: Material(
++                      color: Colors.black54,
++                      borderRadius: BorderRadius.circular(20),
++                      child: InkWell(
++                        borderRadius: BorderRadius.circular(20),
++                        onTap: _showPickerOptions,
++                        child: const Padding(
++                          padding: EdgeInsets.all(6),
++                          child: Icon(Icons.edit, color: Colors.white, size: 16),
++                        ),
++                      ),
++                    ),
++                  ),
++                ])
++              : const Center(
++                  child: Column(
++                    mainAxisSize: MainAxisSize.min,
++                    children: [
++                      Icon(Icons.add_a_photo_outlined, size: 32, color: NexaColors.txt3),
++                      SizedBox(height: 8),
++                      Text('Ajouter une photo', style: TextStyle(color: NexaColors.txt3, fontSize: 13, fontWeight: FontWeight.w600)),
++                    ],
++                  ),
++                ),
++          ),
++        ),
++
++        const SizedBox(height: 16),
++        SizedBox(
++          width: double.infinity,
++          child: ElevatedButton(
++            onPressed: (_pickedImage == null || _submitting) ? null : _submit,
++            style: ElevatedButton.styleFrom(
++              backgroundColor: NexaColors.blue,
++              foregroundColor: Colors.white,
++              padding: const EdgeInsets.symmetric(vertical: 14),
++              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
++            ),
++            child: _submitting
++              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
++              : const Text('Envoyer ma copie', style: TextStyle(fontWeight: FontWeight.w700)),
++          ),
++        ),
++        const SizedBox(height: 24),
++      ],
++    );
++  }
++
++  Widget _submissionStatusCard(Map<String, dynamic> submission) {
++    final status = '${submission['status'] ?? 'PENDING'}';
++    final isPending = status == 'PENDING';
++    return Container(
++      width: double.infinity,
++      padding: const EdgeInsets.all(18),
++      decoration: BoxDecoration(
++        color: Colors.white,
++        borderRadius: BorderRadius.circular(16),
++        border: Border.all(color: NexaColors.border),
++      ),
++      child: Column(
++        crossAxisAlignment: CrossAxisAlignment.start,
++        children: [
++          Row(children: [
++            Icon(isPending ? Icons.hourglass_top_rounded : Icons.check_circle,
++              color: isPending ? NexaColors.gold : NexaColors.green, size: 22),
++            const SizedBox(width: 10),
++            Text(isPending ? 'Copie envoyée' : 'Copie corrigée',
++              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: NexaColors.txt)),
++          ]),
++          const SizedBox(height: 8),
++          Text(
++            isPending
++              ? 'Votre copie est en attente de correction. Vous serez notifié dès qu\'elle sera examinée.'
++              : (submission['note'] != null && '${submission['note']}'.isNotEmpty
++                  ? '${submission['note']}'
++                  : 'Votre copie a été corrigée.'),
++            style: const TextStyle(fontSize: 13, color: NexaColors.txt2),
++          ),
++        ],
++      ),
++    );
++  }
++}
+diff --git a/pubspec.yaml b/pubspec.yaml
+index 4875223..89318eb 100644
+--- a/pubspec.yaml
++++ b/pubspec.yaml
+@@ -40,6 +40,8 @@ dependencies:
+   flutter_riverpod: ^3.3.2
+   shared_preferences: ^2.5.5
+   flutter_math_fork: ^0.7.4
++  image_picker: ^1.1.2
++  url_launcher: ^6.3.1
+ 
+ dev_dependencies:
+   flutter_test:
+-- 
+2.43.0
+

@@ -1,0 +1,225 @@
+From de0045e1aed808e271fe00ee7804d23e59f1462a Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Tue, 28 Jul 2026 20:26:11 +0000
+Subject: [PATCH] feat(admin): edit-user form + LaTeX live preview in exercise
+ editor
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- New 'Modifier les informations' button on the student detail panel,
+  opens a form (nom/prénom/école/filière) wired to the existing
+  PUT /admin/users/:id — closes the last gap in the moderation actions
+- Exercise editor: live LaTeX/MathJax preview under 'Énoncé' and
+  'Solution détaillée' using the existing LatexText widget, plus a
+  hint about the $...$ / $$...$$ syntax, so admins can catch broken
+  formulas before saving (students already see this rendering when
+  solving the exercise)
+---
+ .../presentation/admin_content_screen.dart    | 37 ++++++++
+ .../presentation/admin_students_screen.dart   | 94 +++++++++++++++++++
+ 2 files changed, 131 insertions(+)
+
+diff --git a/lib/features/admin/presentation/admin_content_screen.dart b/lib/features/admin/presentation/admin_content_screen.dart
+index 5c4ef61..a029b03 100644
+--- a/lib/features/admin/presentation/admin_content_screen.dart
++++ b/lib/features/admin/presentation/admin_content_screen.dart
+@@ -1,6 +1,7 @@
+ import 'package:flutter/material.dart';
+ import '../../../core/api/api_client.dart';
+ import '../../../core/theme/nexa_theme.dart';
++import '../../../widgets/latex_text.dart';
+ import '../widgets/admin_widgets.dart';
+ 
+ class AdminContentScreen extends StatefulWidget {
+@@ -356,6 +357,37 @@ class _ExerciseFormContentState extends State<_ExerciseFormContent> {
+     }
+   }
+ 
++  /// Live preview of `$...$` / `$$...$$` LaTeX as the admin types, so they
++  /// can catch broken formulas before saving — students already see this
++  /// rendering when solving the exercise (see widgets/latex_text.dart).
++  Widget _latexPreview(TextEditingController controller) {
++    return AnimatedBuilder(
++      animation: controller,
++      builder: (context, _) {
++        final text = controller.text.trim();
++        if (text.isEmpty || (!text.contains(r'$'))) return const SizedBox(height: 10);
++        return Container(
++          margin: const EdgeInsets.only(top: 6, bottom: 10),
++          padding: const EdgeInsets.all(10),
++          width: double.infinity,
++          decoration: BoxDecoration(
++            color: NexaColors.bg,
++            borderRadius: BorderRadius.circular(8),
++            border: Border.all(color: NexaColors.border),
++          ),
++          child: Column(
++            crossAxisAlignment: CrossAxisAlignment.start,
++            children: [
++              const Text('APERÇU', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: NexaColors.txt3, letterSpacing: 0.6)),
++              const SizedBox(height: 6),
++              LatexText(text, style: const TextStyle(fontSize: 13, color: NexaColors.txt)),
++            ],
++          ),
++        );
++      },
++    );
++  }
++
+   @override
+   Widget build(BuildContext context) {
+     return Column(
+@@ -365,8 +397,13 @@ class _ExerciseFormContentState extends State<_ExerciseFormContent> {
+         AdDropdown(label: 'Matière', value: _matiere, options: const ['MATHEMATIQUES', 'PHYSIQUE', 'SCIENCES_INGENIEUR', 'AUTRE'], onChanged: (v) => setState(() => _matiere = v!)),
+         AdDropdown(label: 'Difficulté', value: _difficulte, options: const ['UN_ETOILE', 'DEUX_ETOILES', 'TROIS_ETOILES'], onChanged: (v) => setState(() => _difficulte = v!)),
+         AdField(label: 'XP de base', controller: _xp, keyboardType: TextInputType.number),
++        const Text("Formules : entourez de \$...\$ (en ligne) ou \$\$...\$\$ (bloc) — ex. \$x^2 + 1\$",
++          style: TextStyle(fontSize: 10, color: NexaColors.txt3, fontStyle: FontStyle.italic)),
++        const SizedBox(height: 6),
+         AdField(label: 'Énoncé', controller: _enonce, maxLines: 3),
++        _latexPreview(_enonce),
+         AdField(label: 'Solution détaillée', controller: _solution, maxLines: 3),
++        _latexPreview(_solution),
+         AdField(label: 'Indice 1 (optionnel)', controller: _hint1),
+         AdField(label: 'Indice 2 (optionnel)', controller: _hint2),
+         const Text('RÉPONSE ATTENDUE (TEXTE LIBRE, OPTIONNEL)',
+diff --git a/lib/features/admin/presentation/admin_students_screen.dart b/lib/features/admin/presentation/admin_students_screen.dart
+index a180e23..b72066b 100644
+--- a/lib/features/admin/presentation/admin_students_screen.dart
++++ b/lib/features/admin/presentation/admin_students_screen.dart
+@@ -291,6 +291,7 @@ class _AdminStudentsScreenState extends State<AdminStudentsScreen> {
+       onReactivate: () => _updateStatus(student, 'ACTIVE'),
+       onBan: () => _updateStatus(student, 'BANNED'),
+       onPromote: () => _promote(student),
++      onEdited: _load,
+     ));
+   }
+ }
+@@ -301,12 +302,14 @@ class _StudentDetailContent extends StatefulWidget {
+   final VoidCallback onReactivate;
+   final VoidCallback onBan;
+   final VoidCallback onPromote;
++  final VoidCallback onEdited;
+   const _StudentDetailContent({
+     required this.student,
+     required this.onSuspend,
+     required this.onReactivate,
+     required this.onBan,
+     required this.onPromote,
++    required this.onEdited,
+   });
+ 
+   @override
+@@ -348,6 +351,20 @@ class _StudentDetailContentState extends State<_StudentDetailContent> {
+     }
+   }
+ 
++  Future<void> _editUser() async {
++    final saved = await showAdModal<bool>(
++      context,
++      title: 'Modifier les informations',
++      child: _EditUserForm(student: _detail ?? widget.student),
++    );
++
++    if (saved == true) {
++      widget.onEdited();
++      await _load(); // refresh this detail view in place
++      if (mounted) showAdSnack(context, 'Informations mises à jour.');
++    }
++  }
++
+   @override
+   Widget build(BuildContext context) {
+     final s = _detail ?? widget.student;
+@@ -416,6 +433,10 @@ class _StudentDetailContentState extends State<_StudentDetailContent> {
+           const SizedBox(height: 16),
+           _xpProgressionSection(s['xpProgression'] as List<dynamic>?),
+           const SizedBox(height: 18),
++          Row(children: [
++            Expanded(child: AdBtn(label: '✏️ Modifier les informations', small: true, variant: AdBtnVariant.ghost, onPressed: _editUser)),
++          ]),
++          const SizedBox(height: 8),
+           Row(children: [
+             Expanded(child: AdBtn(label: '📩 Envoyer message', variant: AdBtnVariant.secondary, onPressed: _openMessageComposer)),
+             const SizedBox(width: 10),
+@@ -563,3 +584,76 @@ class _MessageComposerState extends State<_MessageComposer> {
+     );
+   }
+ }
++
++class _EditUserForm extends StatefulWidget {
++  final Map<String, dynamic> student;
++  const _EditUserForm({required this.student});
++
++  @override
++  State<_EditUserForm> createState() => _EditUserFormState();
++}
++
++class _EditUserFormState extends State<_EditUserForm> {
++  late final TextEditingController _nom;
++  late final TextEditingController _prenom;
++  late final TextEditingController _ecole;
++  late String _filiere;
++  bool _saving = false;
++
++  static const _filieres = ['MP', 'PC', 'TSI', 'BIO', 'TECHNO'];
++
++  @override
++  void initState() {
++    super.initState();
++    _nom = TextEditingController(text: '${widget.student['nom'] ?? ''}');
++    _prenom = TextEditingController(text: '${widget.student['prenom'] ?? ''}');
++    _ecole = TextEditingController(text: '${widget.student['ecole'] ?? ''}');
++    final currentFiliere = '${widget.student['filiere'] ?? ''}';
++    _filiere = _filieres.contains(currentFiliere) ? currentFiliere : _filieres.first;
++  }
++
++  @override
++  void dispose() {
++    _nom.dispose();
++    _prenom.dispose();
++    _ecole.dispose();
++    super.dispose();
++  }
++
++  Future<void> _save() async {
++    if (_nom.text.trim().isEmpty || _prenom.text.trim().isEmpty) {
++      showAdSnack(context, 'Nom et prénom sont requis.', error: true);
++      return;
++    }
++    setState(() => _saving = true);
++    try {
++      await ApiClient.updateAdminUser(widget.student['id'], {
++        'nom': _nom.text.trim(),
++        'prenom': _prenom.text.trim(),
++        'ecole': _ecole.text.trim(),
++        'filiere': _filiere,
++      });
++      if (mounted) Navigator.of(context).pop(true);
++    } catch (_) {
++      if (mounted) {
++        setState(() => _saving = false);
++        showAdSnack(context, "Échec de l'enregistrement.", error: true);
++      }
++    }
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.start,
++      children: [
++        AdField(label: 'Nom', controller: _nom),
++        AdField(label: 'Prénom', controller: _prenom),
++        AdField(label: 'École', controller: _ecole),
++        AdDropdown(label: 'Filière', value: _filiere, options: _filieres, onChanged: (v) => setState(() => _filiere = v!)),
++        const SizedBox(height: 4),
++        AdBtn(label: 'Enregistrer', full: true, loading: _saving, onPressed: _save),
++      ],
++    );
++  }
++}
+-- 
+2.43.0
+
