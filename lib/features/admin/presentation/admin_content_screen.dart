@@ -279,7 +279,7 @@ class _ExerciseFormContentState extends State<_ExerciseFormContent> {
   late TextEditingController _enonce;
   late TextEditingController _solution;
   late TextEditingController _xp;
-  late TextEditingController _hint1, _hint2;
+  late TextEditingController _hint1, _hint2, _hint3, _hint4;
   late TextEditingController _reponseTexte;
   String _matiere = 'MATHEMATIQUES';
   String _difficulte = 'UN_ETOILE';
@@ -299,6 +299,8 @@ class _ExerciseFormContentState extends State<_ExerciseFormContent> {
     _xp = TextEditingController(text: '${ex?['xpBase'] ?? 10}');
     _hint1 = TextEditingController(text: ex?['hint1'] ?? '');
     _hint2 = TextEditingController(text: ex?['hint2'] ?? '');
+    _hint3 = TextEditingController(text: ex?['hint3'] ?? '');
+    _hint4 = TextEditingController(text: ex?['hint4'] ?? '');
     _reponseTexte = TextEditingController(text: ex?['reponseTexte'] ?? '');
     _matiere = ex?['matiere'] ?? 'MATHEMATIQUES';
     _difficulte = ex?['difficulte'] ?? 'UN_ETOILE';
@@ -339,6 +341,8 @@ class _ExerciseFormContentState extends State<_ExerciseFormContent> {
       'xpBase': int.tryParse(_xp.text) ?? 10,
       if (_hint1.text.trim().isNotEmpty) 'hint1': _hint1.text.trim(),
       if (_hint2.text.trim().isNotEmpty) 'hint2': _hint2.text.trim(),
+      if (_hint3.text.trim().isNotEmpty) 'hint3': _hint3.text.trim(),
+      if (_hint4.text.trim().isNotEmpty) 'hint4': _hint4.text.trim(),
       if (_reponseTexte.text.trim().isNotEmpty) 'reponseTexte': _reponseTexte.text.trim(),
       'choix': choix,
     };
@@ -406,6 +410,8 @@ class _ExerciseFormContentState extends State<_ExerciseFormContent> {
         _latexPreview(_solution),
         AdField(label: 'Indice 1 (optionnel)', controller: _hint1),
         AdField(label: 'Indice 2 (optionnel)', controller: _hint2),
+        AdField(label: 'Indice 3 (optionnel)', controller: _hint3),
+        AdField(label: 'Indice 4 (optionnel)', controller: _hint4),
         const Text('RÉPONSE ATTENDUE (TEXTE LIBRE, OPTIONNEL)',
           style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: NexaColors.txt3, letterSpacing: 0.6)),
         const SizedBox(height: 4),
@@ -527,6 +533,8 @@ class _CreateContestFormContentState extends State<_CreateContestFormContent> {
         xpController: TextEditingController(text: '10'),
         hint1Controller: TextEditingController(),
         hint2Controller: TextEditingController(),
+        hint3Controller: TextEditingController(),
+        hint4Controller: TextEditingController(),
         reponseTexteController: TextEditingController(),
         choiceControllers: [
           TextEditingController(),
@@ -598,6 +606,8 @@ class _CreateContestFormContentState extends State<_CreateContestFormContent> {
         'xpBase': xpBase,
         if (q.hint1Controller.text.trim().isNotEmpty) 'hint1': q.hint1Controller.text.trim(),
         if (q.hint2Controller.text.trim().isNotEmpty) 'hint2': q.hint2Controller.text.trim(),
+        if (q.hint3Controller.text.trim().isNotEmpty) 'hint3': q.hint3Controller.text.trim(),
+        if (q.hint4Controller.text.trim().isNotEmpty) 'hint4': q.hint4Controller.text.trim(),
         if (q.reponseTexteController.text.trim().isNotEmpty) 'reponseTexte': q.reponseTexteController.text.trim(),
         'choix': choices,
       });
@@ -670,6 +680,8 @@ class _CreateContestFormContentState extends State<_CreateContestFormContent> {
                 AdField(label: 'XP Base', controller: q.xpController, keyboardType: TextInputType.number),
                 AdField(label: 'Indice 1 (optionnel)', controller: q.hint1Controller),
                 AdField(label: 'Indice 2 (optionnel)', controller: q.hint2Controller),
+                AdField(label: 'Indice 3 (optionnel)', controller: q.hint3Controller),
+                AdField(label: 'Indice 4 (optionnel)', controller: q.hint4Controller),
                 AdField(label: 'Réponse exacte (texte libre, optionnel)', controller: q.reponseTexteController),
                 const SizedBox(height: 8),
                 const Text('Choix (cochez le correct) :', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
@@ -733,6 +745,8 @@ class _ContestQuestionInput {
   final TextEditingController xpController;
   final TextEditingController hint1Controller;
   final TextEditingController hint2Controller;
+  final TextEditingController hint3Controller;
+  final TextEditingController hint4Controller;
   final TextEditingController reponseTexteController;
   final List<TextEditingController> choiceControllers;
   int correctIndex;
@@ -743,6 +757,8 @@ class _ContestQuestionInput {
     required this.xpController,
     required this.hint1Controller,
     required this.hint2Controller,
+    required this.hint3Controller,
+    required this.hint4Controller,
     required this.reponseTexteController,
     required this.choiceControllers,
     required this.correctIndex,
@@ -754,6 +770,8 @@ class _ContestQuestionInput {
     xpController.dispose();
     hint1Controller.dispose();
     hint2Controller.dispose();
+    hint3Controller.dispose();
+    hint4Controller.dispose();
     reponseTexteController.dispose();
     for (var c in choiceControllers) {
       c.dispose();
