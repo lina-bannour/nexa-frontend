@@ -500,7 +500,7 @@ class _ContestFormContentState extends State<_ContestFormContent> {
       children: [
         AdField(label: 'Titre', controller: _titre),
         AdField(label: 'Année', controller: _annee, keyboardType: TextInputType.number),
-        AdDropdown(label: 'Filière', value: _filiere, options: const ['MP', 'PC', 'TSI', 'BIO', 'TECHNO'], onChanged: (v) => setState(() => _filiere = v!)),
+        AdDropdown(label: 'Filière', value: _filiere, options: const ['MP', 'PT', 'PC', 'BG'], onChanged: (v) => setState(() => _filiere = v!)),
         const SizedBox(height: 8),
         AdBtn(label: 'Enregistrer', full: true, loading: _saving, onPressed: _save),
       ],
@@ -640,7 +640,7 @@ class _CreateContestFormContentState extends State<_CreateContestFormContent> {
       children: [
         AdField(label: 'Titre du Concours', controller: _titre),
         AdField(label: 'Année', controller: _annee, keyboardType: TextInputType.number),
-        AdDropdown(label: 'Filière', value: _filiere, options: const ['MP', 'PC', 'TSI', 'BIO', 'TECHNO'], onChanged: (v) => setState(() => _filiere = v!)),
+        AdDropdown(label: 'Filière', value: _filiere, options: const ['MP', 'PT', 'PC', 'BG'], onChanged: (v) => setState(() => _filiere = v!)),
         AdDropdown(label: 'Matière', value: _matiere, options: const ['MATHEMATIQUES', 'PHYSIQUE', 'SCIENCES_INGENIEUR', 'AUTRE'], onChanged: (v) => setState(() => _matiere = v!)),
         
         const SizedBox(height: 16),

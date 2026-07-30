@@ -20,6 +20,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? _profile;
+  Map<String, dynamic>? _myRank;
   bool _loading = true;
 
   @override
@@ -34,6 +35,17 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() { _profile = p; _loading = false; });
     } catch (e) {
       setState(() => _loading = false);
+      return;
+    }
+    // Rang global (toutes filières, tout temps) — cohérent avec l'état
+    // initial de l'écran Classement. Séparé du profil : si ça échoue, la
+    // home reste utilisable, la carte "Rang" affiche juste "—".
+    try {
+      final rank = await ApiClient.getMyRank();
+      if (mounted) setState(() => _myRank = rank);
+    } catch (e) {
+      // Pas de rang dispo (pas encore classé, ou erreur réseau) — la carte
+      // gère déjà l'absence de valeur.
     }
   }
 
@@ -70,6 +82,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final prenom = _profile?['prenom'] ?? '';
     final filiere = _profile?['filiere'] ?? '';
     final attempts = _profile?['_count']?['attempts'] ?? 0;
+    final streak = _profile?['streak'] ?? 0;
+    final rank = _myRank?['rank'] as int?;
     final levelName = _levelName(xp);
     final nextXp = _nextLevelXp(xp);
     final minXp = _currentLevelMin(xp);
@@ -137,9 +151,9 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(width: 8),
               _statCard('📝', '$attempts', 'Exs', NexaColors.purple),
               const SizedBox(width: 8),
-              _statCard('🏆', '#1', 'Rang', NexaColors.gold),
+              _statCard('🏆', rank != null ? '#$rank' : '—', 'Rang', NexaColors.gold),
               const SizedBox(width: 8),
-              _statCard('🔥', '0', 'Jours', NexaColors.green),
+              _statCard('🔥', '$streak', 'Jours', NexaColors.green),
             ]),
             const SizedBox(height: 14),
 

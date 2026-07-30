@@ -23,14 +23,13 @@ class _ConcoursScreenState extends State<ConcoursScreen> {
   int _currentQuestionIndex = 0;
   bool _loadingDetail = false;
 
-  final List<String> _filieres = ['MP', 'PC', 'TSI', 'BIO', 'TECHNO'];
+  final List<String> _filieres = ['MP', 'PT', 'PC', 'BG'];
 
   final Map<String, Color> _filiereColors = {
     'MP': NexaColors.blue,
+    'PT': NexaColors.green,
     'PC': NexaColors.purple,
-    'TSI': NexaColors.green,
-    'BIO': const Color(0xFFDB2777),
-    'TECHNO': const Color(0xFFD97706),
+    'BG': const Color(0xFFDB2777),
   };
 
   @override

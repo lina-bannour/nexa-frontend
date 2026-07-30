@@ -46,10 +46,41 @@ class _ContestPhotoSubmissionScreenState extends State<ContestPhotoSubmissionScr
     }
   }
 
+  // Libellés d'affichage pour les codes stockés côté backend.
+  static const Map<String, String> _filiereLabels = {
+    'MP': 'Maths-Physique',
+    'PT': 'Physique-Technologie',
+    'PC': 'Physique-Chimie',
+    'BG': 'Biologie-Géologie',
+  };
+
+  static const Map<String, String> _matiereLabels = {
+    'MATHEMATIQUES': 'Mathématiques',
+    'PHYSIQUE': 'Physique',
+    'SCIENCES_INGENIEUR': 'Sciences de l\'Ingénieur',
+    'AUTRE': 'Autre',
+  };
+
+  String? get _filiere => widget.contest['filiere'] as String?;
+  String? get _matiere => widget.contest['matiere'] as String?;
+  String get _filiereLabel => _filiereLabels[_filiere] ?? _filiere ?? '';
+  String get _matiereLabel => _matiereLabels[_matiere] ?? _matiere ?? '';
+
+  // Portail officiel : IPEIS — "Sujets et corrections" des concours
+  // nationaux d'entrée aux cycles d'ingénieurs. La page classe les épreuves
+  // par spécialité (onglets Maths-Physique / Physique-Chimie / Technologie /
+  // Biologie-Géologie), puis par session et par matière. On transmet ces
+  // trois informations en paramètres (utile si le site les exploite un
+  // jour) et on les affiche aussi à l'écran, pour que l'étudiant sache
+  // directement quel onglet/session/matière chercher une fois sur la page.
   String get _officialSubjectUrl {
     final annee = widget.contest['annee'];
-    // Portail officiel des concours nationaux d'ingénieurs (DGET / MESRS).
-    return 'https://concours-ingenieurs.rnu.tn/epreuves?annee=$annee';
+    final uri = Uri.parse('https://ipeis.rnu.tn/fra/s1347/pages/448/Sujets-et-corrections');
+    return uri.replace(queryParameters: {
+      if (_filiere != null) 'filiere': _filiere,
+      if (annee != null) 'annee': '$annee',
+      if (_matiere != null) 'matiere': _matiere,
+    }).toString();
   }
 
   Future<void> _openOfficialSubject() async {
@@ -168,30 +199,67 @@ class _ContestPhotoSubmissionScreenState extends State<ContestPhotoSubmissionScr
   }
 
   Widget _officialSubjectCard() {
-    return NexaCard(
-      onTap: _openOfficialSubject,
-      child: Row(
-        children: [
-          Container(
-            width: 44, height: 44,
-            decoration: BoxDecoration(color: NexaColors.blueLight, borderRadius: BorderRadius.circular(12)),
-            alignment: Alignment.center,
-            child: const Text('📄', style: TextStyle(fontSize: 20)),
+    final annee = widget.contest['annee'];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        NexaCard(
+          onTap: _openOfficialSubject,
+          child: Row(
+            children: [
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(color: NexaColors.blueLight, borderRadius: BorderRadius.circular(12)),
+                alignment: Alignment.center,
+                child: const Text('📄', style: TextStyle(fontSize: 20)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Voir le sujet officiel', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: NexaColors.txt)),
+                    const SizedBox(height: 2),
+                    const Text('IPEIS · Sujets et corrections des concours nationaux',
+                      style: TextStyle(fontSize: 11.5, color: NexaColors.txt3)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.open_in_new, size: 18, color: NexaColors.blue),
+            ],
           ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Voir le sujet officiel', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: NexaColors.txt)),
-                SizedBox(height: 2),
-                Text('Portail des concours nationaux d\'ingénieurs (DGET)',
-                  style: TextStyle(fontSize: 11.5, color: NexaColors.txt3)),
-              ],
-            ),
-          ),
-          const Icon(Icons.open_in_new, size: 18, color: NexaColors.blue),
-        ],
+        ),
+        const SizedBox(height: 8),
+        // La page officielle liste tout par onglets ; on rappelle ici
+        // précisément quoi y chercher (spécialité / session / matière).
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            if (_filiere != null) _infoChip('Spécialité', _filiereLabel),
+            if (annee != null) _infoChip('Session', '$annee'),
+            if (_matiere != null) _infoChip('Matière', _matiereLabel),
+          ],
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Sur le site officiel, sélectionnez cet onglet de spécialité puis cette session pour retrouver l\'épreuve et sa correction.',
+          style: TextStyle(fontSize: 11, color: NexaColors.txt3, height: 1.4),
+        ),
+      ],
+    );
+  }
+
+  Widget _infoChip(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: NexaColors.blueLight,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        '$label : $value',
+        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: NexaColors.blue),
       ),
     );
   }

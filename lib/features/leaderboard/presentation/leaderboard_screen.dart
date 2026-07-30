@@ -17,7 +17,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   String? _selectedFiliere;
   String _period = 'global';
 
-  final List<String> _filieres = ['MP', 'PC', 'TSI', 'BIO', 'TECHNO'];
+  final List<String> _filieres = ['MP', 'PT', 'PC', 'BG'];
   final List<Map<String, String>> _periods = const [
     {'value': 'global', 'label': 'Tout temps'},
     {'value': 'semaine', 'label': 'Cette semaine'},

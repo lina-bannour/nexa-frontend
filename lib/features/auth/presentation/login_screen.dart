@@ -29,7 +29,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   late final AnimationController _animController;
   late final Animation<double> _fadeAnim;
 
-  final List<String> _filieres = ['MP', 'PC', 'TSI', 'BIO', 'TECHNO'];
+  final List<String> _filieres = ['MP', 'PT', 'PC', 'BG'];
 
   static const _features = [
     ('📚', 'Exercices', 'QCM + indices'),
@@ -142,7 +142,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       _buildFormCard(),
                       const SizedBox(height: 20),
                       Text(
-                        'Classes Préparatoires · MP · PC · TSI · Bio',
+                        'Classes Préparatoires · MP · PT · PC · BG',
                         style: TextStyle(color: Colors.white.withOpacity(0.35), fontSize: 11),
                       ),
                     ],
