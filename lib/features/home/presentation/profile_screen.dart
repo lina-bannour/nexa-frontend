@@ -3,6 +3,7 @@ import '../../../core/api/api_client.dart';
 import '../../../core/theme/nexa_theme.dart';
 import '../../../widgets/shared_widgets.dart';
 import '../../forum/presentation/forum_screen.dart';
+import 'edit_profile_screen.dart';
 import 'progression_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -287,6 +288,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           body: SafeArea(child: ForumScreen()),
                         ),
                       ));
+                    },
+                  ),
+                  const Divider(height: 1, color: NexaColors.border),
+                  ListTile(
+                    leading: const Icon(Icons.edit_outlined, color: NexaColors.blue),
+                    title: const Text(
+                      'Modifier mon compte',
+                      style: TextStyle(fontWeight: FontWeight.w600, color: NexaColors.txt2),
+                    ),
+                    subtitle: const Text('École, filière', style: TextStyle(fontSize: 12, color: NexaColors.txt3)),
+                    trailing: const Icon(Icons.chevron_right, color: NexaColors.txt3),
+                    onTap: () async {
+                      final updated = await Navigator.of(context).push<Map<String, dynamic>>(
+                        MaterialPageRoute(
+                          builder: (_) => EditProfileScreen(profile: _profile),
+                        ),
+                      );
+                      if (updated != null) {
+                        // Le profil a été modifié avec succès : on rafraîchit
+                        // l'écran (XP, rang, etc. peuvent aussi avoir changé).
+                        _load();
+                      }
                     },
                   ),
                   const Divider(height: 1, color: NexaColors.border),

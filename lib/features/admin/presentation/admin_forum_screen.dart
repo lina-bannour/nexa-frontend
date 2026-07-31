@@ -42,7 +42,10 @@ class _AdminForumScreenState extends State<AdminForumScreen> {
   }
 
   List<dynamic> get _filtered {
-    if (_filter == 'Tout') return _posts;
+    // "Tout" veut dire "tout ce qui est actif" : on masque les posts déjà
+    // supprimés pour qu'un post supprimé disparaisse bien visuellement.
+    // Ils restent consultables via l'onglet dédié "🗑️ Supprimés".
+    if (_filter == 'Tout') return _posts.where((p) => p['status'] != 'REMOVED').toList();
     return _posts.where((p) => p['status'] == _filter).toList();
   }
 
@@ -95,9 +98,15 @@ class _AdminForumScreenState extends State<AdminForumScreen> {
           const SizedBox(height: 14),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            child: Row(children: ['Tout', 'REPORTED', 'PUBLISHED'].map((f) {
+            child: Row(children: ['Tout', 'REPORTED', 'PUBLISHED', 'REMOVED'].map((f) {
               final active = _filter == f;
-              final label = f == 'Tout' ? 'Tout' : f == 'REPORTED' ? '🚩 Signalés' : '✅ Publiés';
+              final label = f == 'Tout'
+                  ? 'Tout'
+                  : f == 'REPORTED'
+                      ? '🚩 Signalés'
+                      : f == 'PUBLISHED'
+                          ? '✅ Publiés'
+                          : '🗑️ Supprimés';
               return Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: GestureDetector(
@@ -137,9 +146,15 @@ class _AdminForumScreenState extends State<AdminForumScreen> {
   }
 
   Widget _postCard(dynamic p) {
-    final reported = p['status'] == 'REPORTED';
+    final status = p['status'] as String?;
+    final reported = status == 'REPORTED';
+    final removed = status == 'REMOVED';
     final author = p['author'] as Map<String, dynamic>?;
     final authorName = author != null ? '${author['prenom'] ?? ''} ${author['nom'] ?? ''}'.trim() : 'Inconnu';
+
+    final String tagLabel = removed ? 'Supprimé' : (reported ? 'Signalé' : 'Publié');
+    final Color tagColor = removed ? const Color(0xFF6B7280) : (reported ? const Color(0xFF991B1B) : const Color(0xFF166534));
+    final Color tagBg = removed ? const Color(0xFFF3F4F6) : (reported ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4));
 
     return AdCard(
       padding: const EdgeInsets.all(14),
@@ -151,11 +166,7 @@ class _AdminForumScreenState extends State<AdminForumScreen> {
               child: Text('${reported ? "🚩 " : ""}${p['titre'] ?? ''}',
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
-            AdTag(
-              label: reported ? 'Signalé' : 'Publié',
-              color: reported ? const Color(0xFF991B1B) : const Color(0xFF166534),
-              bg: reported ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
-            ),
+            AdTag(label: tagLabel, color: tagColor, bg: tagBg),
           ]),
           const SizedBox(height: 4),
           Text('$authorName · ${p['matiere'] ?? ''}', style: const TextStyle(fontSize: 11, color: NexaColors.txt3)),
@@ -163,11 +174,15 @@ class _AdminForumScreenState extends State<AdminForumScreen> {
           Row(children: [
             Expanded(
               child: Row(children: [
-                AdBtn(label: '', icon: Icons.check, small: true, variant: AdBtnVariant.green,
-                    onPressed: reported ? () => _updateStatus(p['id'], 'PUBLISHED') : null),
-                const SizedBox(width: 8),
-                AdBtn(label: 'Supprimer', icon: Icons.delete_outline, small: true, variant: AdBtnVariant.red,
-                    onPressed: () => _confirmRemove(p['id'])),
+                if (!removed) ...[
+                  AdBtn(label: '', icon: Icons.check, small: true, variant: AdBtnVariant.green,
+                      onPressed: reported ? () => _updateStatus(p['id'], 'PUBLISHED') : null),
+                  const SizedBox(width: 8),
+                  AdBtn(label: 'Supprimer', icon: Icons.delete_outline, small: true, variant: AdBtnVariant.red,
+                      onPressed: () => _confirmRemove(p['id'])),
+                ] else
+                  AdBtn(label: 'Restaurer', icon: Icons.restore, small: true, variant: AdBtnVariant.green,
+                      onPressed: () => _updateStatus(p['id'], 'PUBLISHED')),
               ]),
             ),
           ]),

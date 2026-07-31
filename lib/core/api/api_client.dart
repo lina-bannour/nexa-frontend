@@ -132,6 +132,35 @@ class ApiClient {
     return res.data;
   }
 
+  // Modifie le compte de l'utilisateur connecté (nom, prénom, école, filière).
+  static Future<Map<String, dynamic>> updateProfile({
+    String? nom,
+    String? prenom,
+    String? ecole,
+    String? filiere,
+  }) async {
+    final res = await _dio.put('/users/me', data: {
+      if (nom != null) 'nom': nom,
+      if (prenom != null) 'prenom': prenom,
+      if (ecole != null) 'ecole': ecole,
+      if (filiere != null) 'filiere': filiere,
+    });
+    _cachedProfile = res.data;
+    return res.data;
+  }
+
+  // Change le mot de passe de l'utilisateur connecté (nécessite le mot de
+  // passe actuel pour confirmer l'identité).
+  static Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await _dio.patch('/users/me/password', data: {
+      'currentPassword': currentPassword,
+      'newPassword': newPassword,
+    });
+  }
+
   static Map<String, dynamic>? get cachedProfile => _cachedProfile;
 
   // EXERCISES
